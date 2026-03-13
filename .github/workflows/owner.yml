@@ -35,6 +35,8 @@ jobs:
           TERRARIUM_MODEL_MEDIUM: ${{ vars.TERRARIUM_MODEL_MEDIUM }}
           TERRARIUM_MODEL_LOW: ${{ vars.TERRARIUM_MODEL_LOW }}
           TERRARIUM_AUTO_REVIEW: ${{ vars.TERRARIUM_AUTO_REVIEW }}
+          TERRARIUM_WALLET: ${{ vars.TERRARIUM_WALLET }}
+          TERRARIUM_TOKEN: ${{ vars.TERRARIUM_TOKEN }}
           BASE_RPC_URL: ${{ vars.BASE_RPC_URL }}
         run: |
           ./terrarium-owner 2>&1 | tee owner-output.log
