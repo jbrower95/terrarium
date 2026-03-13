@@ -348,7 +348,7 @@ async fn read_related_files(issue_body: &str, file_listing: &str) -> Result<Stri
 
     for file in matched {
         let content = tokio::fs::read_to_string(file).await.unwrap_or_default();
-        let content = truncate_string(&content, 3000);
+        let content = truncate_string(&content, 15000);
         context.push_str(&format!("--- {file} ---\n{content}\n\n"));
     }
 
