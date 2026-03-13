@@ -21,6 +21,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity
+        run: |
+          git config user.name "terrarium[bot]"
+          git config user.email "terrarium[bot]@users.noreply.github.com"
+
       - name: Download terrarium-owner
         run: |
           RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-owner-linux-x86_64"
@@ -52,8 +57,6 @@ jobs:
 
       - name: Push changes
         run: |
-          git config user.name "terrarium[bot]"
-          git config user.email "terrarium[bot]@users.noreply.github.com"
           git add JOURNAL.md README.md .github/workflows/ || true
           git diff --cached --quiet || git commit -m "terrarium: owner cycle $(date -u +%Y-%m-%dT%H:%M:%S)"
           git push
