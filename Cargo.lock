@@ -1419,6 +1419,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "libc",
+ "serde_json",
  "terrarium-core",
  "tokio",
 ]
