@@ -1,0 +1,58 @@
+name: terrarium-employee
+
+on:
+  workflow_dispatch:
+    inputs:
+      complexity:
+        description: "Task complexity tier"
+        required: true
+        default: medium
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+      issue_number:
+        description: "Issue number to work on (leave blank to auto-select)"
+        required: false
+        type: string
+        default: ""
+
+concurrency:
+  group: terrarium-issue-${{ inputs.issue_number || 'auto' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  employee:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          token: ${{ secrets.TERRARIUM_GH_TOKEN }}
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install claude CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Run employee
+        run: npx terrarium-employee
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.TERRARIUM_GH_TOKEN }}
+          TASK_COMPLEXITY: ${{ inputs.complexity }}
+          TASK_ISSUE_NUMBER: ${{ inputs.issue_number }}
