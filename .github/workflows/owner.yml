@@ -2,6 +2,9 @@ name: Terrarium Owner
 
 on:
   workflow_call:
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
 
 permissions:
   id-token: write
@@ -28,13 +31,6 @@ jobs:
           RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-owner-linux-x86_64"
           curl -sL "$RELEASE_URL" -o terrarium-owner
           chmod +x terrarium-owner
-
-      - name: Debug secrets
-        run: |
-          echo "OPENROUTER_API_KEY length: ${#OPENROUTER_API_KEY}"
-          echo "OPENROUTER_API_KEY first 5: ${OPENROUTER_API_KEY:0:5}"
-        env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       - name: Run owner cycle
         env:
