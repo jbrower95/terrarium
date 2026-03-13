@@ -1442,6 +1442,8 @@ name = "terrarium-employee"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "serde",
+ "serde_json",
  "terrarium-core",
  "tokio",
 ]
