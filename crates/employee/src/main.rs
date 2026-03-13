@@ -376,6 +376,10 @@ fn build_prompt(
          - Write complete file contents, not patches or diffs.\n\
          - Only include files that need to be created or modified.\n\
          - Keep changes minimal and focused on the issue.\n\
+         - Do NOT refactor, rename, reorganize, or \"improve\" existing code.\n\
+         - Do NOT change function signatures, remove functions, or alter code unrelated to the issue.\n\
+         - Do NOT add new dependencies unless the issue explicitly requires them.\n\
+         - When rewriting a file, preserve all existing code exactly as-is except for the specific lines the issue asks you to change.\n\
          - Do NOT include any text outside the JSON object."
     );
 
