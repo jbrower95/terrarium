@@ -30,6 +30,66 @@ library JwtValidator {
     }
 
     // -----------------------------------------------------------------------
+    // Convenience functions for JwksRegistry
+    // -----------------------------------------------------------------------
+
+    /// @notice Extracts the "kid" (Key ID) from a raw JWT's header.
+    /// @param jwt The full JWT as bytes (header.payload.signature in ASCII)
+    /// @return kid The key ID string from the JWT header
+    function extractKid(bytes memory jwt) internal pure returns (string memory kid) {
+        // Find first '.' to isolate the header segment
+        uint256 firstDot = type(uint256).max;
+        for (uint256 i = 0; i < jwt.length; i++) {
+            if (jwt[i] == 0x2E) { firstDot = i; break; }
+        }
+        if (firstDot == type(uint256).max) revert MalformedJwt();
+
+        // Extract and decode the header
+        bytes memory headerB64 = new bytes(firstDot);
+        for (uint256 i = 0; i < firstDot; i++) headerB64[i] = jwt[i];
+        bytes memory headerJson = base64UrlDecode(headerB64);
+
+        // Extract "kid" value
+        bytes memory kidBytes = _extractStringValue(headerJson, "kid");
+        kid = string(kidBytes);
+    }
+
+    /// @notice Verifies an RSA-SHA256 JWT signature given the raw JWT and public key.
+    /// @param jwt The full JWT as bytes (header.payload.signature in ASCII)
+    /// @param n   RSA modulus
+    /// @param e   RSA exponent
+    /// @return valid True if the signature is valid
+    function verifySignature(
+        bytes memory jwt,
+        bytes memory n,
+        bytes memory e
+    ) internal view returns (bool valid) {
+        // Find the two dots
+        uint256 firstDot = type(uint256).max;
+        uint256 secondDot = type(uint256).max;
+        for (uint256 i = 0; i < jwt.length; i++) {
+            if (jwt[i] == 0x2E) {
+                if (firstDot == type(uint256).max) firstDot = i;
+                else { secondDot = i; break; }
+            }
+        }
+        if (secondDot == type(uint256).max) revert MalformedJwt();
+
+        // signed data = header.payload (everything before second dot)
+        bytes memory signedData = new bytes(secondDot);
+        for (uint256 i = 0; i < secondDot; i++) signedData[i] = jwt[i];
+
+        // signature = base64url-decode of everything after second dot
+        uint256 sigLen = jwt.length - secondDot - 1;
+        bytes memory sigB64 = new bytes(sigLen);
+        for (uint256 i = 0; i < sigLen; i++) sigB64[i] = jwt[secondDot + 1 + i];
+        bytes memory signature = base64UrlDecode(sigB64);
+
+        // Verify using OpenZeppelin RSA
+        valid = RSA.pkcs1Sha256(signedData, signature, e, n);
+    }
+
+    // -----------------------------------------------------------------------
     // Main verification entry point
     // -----------------------------------------------------------------------
 
