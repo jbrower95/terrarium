@@ -47,7 +47,7 @@ contract DeployWallet is Script {
 
         // Claim hashes for TerrariumWallet
         bytes32 repoHash = keccak256(abi.encodePacked(repoOwner, "/", repoName));
-        bytes32 workflowHash = keccak256("deploy.yml");
+        bytes32 workflowHash = keccak256("owner.yml");
         bytes32 refHash = keccak256("refs/heads/main");
 
         // -----------------------------------------------------------------
