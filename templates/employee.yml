@@ -29,6 +29,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Configure git identity
+        run: |
+          git config user.name "terrarium[bot]"
+          git config user.email "terrarium[bot]@users.noreply.github.com"
+
       - name: Download terrarium-employee
         run: |
           RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-employee-linux-x86_64"
@@ -37,6 +42,8 @@ jobs:
 
       - name: Run employee
         env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
           TERRARIUM_ISSUE: ${{ inputs.issue_number }}
           TERRARIUM_COMPLEXITY: ${{ inputs.complexity }}
           TERRARIUM_MODEL_LOW: ${{ vars.TERRARIUM_MODEL_LOW }}
