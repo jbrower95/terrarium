@@ -1,5 +1,6 @@
 node_modules/
 dist/
+target/
 *.js.map
 *.d.ts.map
 
@@ -9,3 +10,7 @@ packages/core/src/*.d.ts
 packages/core/src/*.js.map
 packages/core/src/*.d.ts.map
 .claude/
+
+# Foundry
+contracts/out/
+contracts/cache/

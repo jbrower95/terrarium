@@ -1,4 +1,3 @@
-pub mod config;
 pub mod budget;
 pub mod spend;
 pub mod context;

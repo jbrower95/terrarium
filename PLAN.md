@@ -21,7 +21,7 @@ The installer:
 
 1. **Wallet setup** — deploys an OIDC-gated ERC-4337 smart wallet on Base, deterministic from repo identity (CREATE2)
 2. **Token setup** — deploys a Zora bonding curve donation token, treasury as payoutRecipient
-3. **Secrets** — sets `OPENROUTER_API_KEY` as GHA secret, model tiers + wallet/token addresses as GHA variables
+3. **Secrets & variables** — sets `OPENROUTER_API_KEY` as GHA secret, model tiers + wallet/token addresses as GHA repo variables
 4. **Security hardening** — enables branch protection on `main`, restricts direct pushes, requires PR reviews, sets CODEOWNERS for `.github/workflows/`
 5. **Funding walkthrough** — guides user through buying the first tokens to seed the treasury; shows wallet address + Zora link for funding
 6. **First milestone** — prompts user to describe their first milestone; creates it as a GitHub Milestone via `gh api`
@@ -303,7 +303,6 @@ terrarium/
     core/                       # terrarium-core lib crate
       src/
         lib.rs
-        config.rs               # terrarium.json R/W
         budget.rs               # wallet balance, OpenRouter credits, top-up calldata
         spend.rs                # download GHA run artifacts, aggregate spend
         context.rs              # pre-materialize owner prompt
@@ -333,23 +332,14 @@ terrarium/
 
 ---
 
-## Config: `terrarium.json`
+## Config
 
-Minimal. Checked into the target repo by the installer.
+No config files. Everything lives in GitHub:
 
-```json
-{
-  "wallet": "0xABC...",
-  "token": "0xDEF..."
-}
-```
-
-Everything else lives in GitHub:
-- Model assignments: repo variables (`TERRARIUM_MODEL_OWNER`, `_HIGH`, `_MEDIUM`, `_LOW`)
-- Auto-review toggle: `TERRARIUM_AUTO_REVIEW` repo variable
-- Secrets: `OPENROUTER_API_KEY` (GHA environment secret)
-- Project direction: GitHub Milestones
-- Budget thresholds: repo variables or hardcoded in contract (spend policy)
+- **Secrets:** `OPENROUTER_API_KEY` (GHA environment secret)
+- **Repo variables:** `TERRARIUM_WALLET`, `TERRARIUM_TOKEN`, `TERRARIUM_MODEL_OWNER`, `_HIGH`, `_MEDIUM`, `_LOW`, `TERRARIUM_AUTO_REVIEW`
+- **Project direction:** GitHub Milestones
+- **Budget thresholds:** hardcoded in contract (spend policy)
 
 ---
 

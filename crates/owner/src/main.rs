@@ -8,7 +8,6 @@ use serde::Serialize;
 use terrarium_core::{
     actions::{self, ActionResult},
     budget::{self, Balance},
-    config,
     context::{self, OwnerContext},
     inference::{self, InferenceResult, Message},
     journal::{self, JournalEntry},
@@ -72,8 +71,9 @@ async fn main() {
 async fn run() -> Result<()> {
     let repo_root = repo_root()?;
 
-    // ── Step 1: Read config ──────────────────────────────────────────
-    let cfg = config::read_config(&repo_root).context("step 1: read config")?;
+    // ── Step 1: Read wallet + token from env vars (repo variables) ───
+    let wallet = env::var("TERRARIUM_WALLET").unwrap_or_default();
+    let token_addr = env::var("TERRARIUM_TOKEN").ok();
 
     // ── Step 2: Read model config from env vars ──────────────────────
     let model_cfg = models::read_model_config().context("step 2: read model config")?;
@@ -84,12 +84,12 @@ async fn run() -> Result<()> {
 
     if first_run {
         let repo_slug = repo_slug();
-        return handle_first_run(&repo_root, &cfg.wallet, &model_cfg, &repo_slug).await;
+        return handle_first_run(&repo_root, &wallet, &model_cfg, &repo_slug).await;
     }
 
     // ── Step 3: Get wallet balance ───────────────────────────────────
     let rpc_url = env::var("BASE_RPC_URL").unwrap_or_default();
-    let balance = match budget::get_wallet_balance(&cfg.wallet, &rpc_url).await {
+    let balance = match budget::get_wallet_balance(&wallet, &rpc_url).await {
         Ok(b) => b,
         Err(e) => {
             eprintln!("warning: wallet balance fetch failed: {e:#}");
@@ -154,7 +154,7 @@ async fn run() -> Result<()> {
             "warning: OpenRouter credits (${:.2}) below threshold (${:.2}), attempting top-up",
             openrouter_credits, CREDIT_THRESHOLD_USD
         );
-        if let Err(e) = attempt_topup(&cfg.wallet, DEFAULT_TOPUP_USD).await {
+        if let Err(e) = attempt_topup(&wallet, DEFAULT_TOPUP_USD).await {
             eprintln!("warning: top-up failed: {e:#}");
         }
     }
@@ -261,8 +261,8 @@ async fn run() -> Result<()> {
     let open_issues = tasks::list_open_issues(None).await.map(|v| v.len() as u64).unwrap_or(0);
 
     let status_data = StatusData {
-        wallet_address: cfg.wallet.clone(),
-        token_address: cfg.token.clone(),
+        wallet_address: wallet.clone(),
+        token_address: token_addr.clone(),
         balance_eth: balance.eth,
         balance_usd: balance.usd,
         openrouter_credits,
@@ -274,7 +274,7 @@ async fn run() -> Result<()> {
         open_prs: open_prs.len() as u64,
         total_merged: 0, // TODO: track merged count
         zora_url: None,
-        basescan_url: format!("https://basescan.org/address/{}", cfg.wallet),
+        basescan_url: format!("https://basescan.org/address/{}", wallet),
         repo_slug: Some(repo_slug.clone()),
     };
 

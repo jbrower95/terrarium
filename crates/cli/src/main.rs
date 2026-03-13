@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tokio::process::Command;
 
-use terrarium_core::config::{self, TerrariumConfig};
 use terrarium_core::milestones;
 use terrarium_core::models;
 use terrarium_core::token;
@@ -224,15 +223,7 @@ async fn step_secrets(wallet: &str, token_addr: Option<&str>) -> Result<()> {
     if let Some(t) = token_addr {
         gh_variable_set("TERRARIUM_TOKEN", t).await?;
     }
-    eprintln!("  \u{2713} Wallet + token addresses set");
-
-    // Write terrarium.json
-    let cfg = TerrariumConfig {
-        wallet: wallet.to_string(),
-        token: token_addr.map(|s| s.to_string()),
-    };
-    config::write_config(Path::new("."), &cfg)?;
-    eprintln!("  \u{2713} terrarium.json written");
+    eprintln!("  \u{2713} Wallet + token addresses set as repo variables");
 
     Ok(())
 }
