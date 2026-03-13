@@ -1,23 +1,107 @@
 # terrarium — PLAN
 
-Terrarium is a self-running project framework funded by a tip jar.
-It is bigco, rehosted from local daemons to GitHub Actions, and funded by a Base USDC wallet.
+A self-running open source project framework.
 
-Put money in → models get smarter, tasks get done faster.
-Money runs out → models downgrade, task cadence slows.
+Donate to fund a project → an autonomous AI owner manages inference budget, files issues,
+reviews PRs, and ships features. Fully on GitHub Actions. Treasury is an on-chain smart wallet
+that only the owner workflow can control — no human holds the keys.
 
 ---
 
-## Core Differences from bigco
+## How It Works
 
-| bigco | terrarium |
-|---|---|
-| Owner daemon: long-running local process | Owner: scheduled GitHub Actions cron |
-| Employee daemons: local processes polling GitHub | Employees: manually- or owner-triggered GHA workflows |
-| Model config: `staff.json` | Model config: `terrarium.json` + GitHub Secrets |
-| No budget awareness | Budget: USDC balance on Base, computed run-rate |
-| `hardlink` lock files | GHA concurrency groups for mutex |
-| Install: clone repo, run binary | Install: `npx terrarium --install` |
+```
+Supporter donates (buys $PROJECT token on Base via Zora bonding curve)
+  → ETH enters bonding curve reserve
+  → Trading fees (50%) flow to treasury wallet
+  → Treasury is an ERC-4337 smart wallet, OIDC-gated to owner.yml
+  → Owner wakes on cron, checks balance
+  → Owner sells ETH for USDC, tops up OpenRouter credits via crypto payments API
+  → Owner reads PLAN.md, files issues, assigns model tiers based on budget
+  → Employees (GHA workflows) pick up issues, run inference, push PRs
+  → Owner reviews PRs, merges, posts stakeholder updates
+  → Project ships features → more supporters → more donations → cycle continues
+```
+
+---
+
+## Architecture
+
+### Identity & Treasury
+
+The owner's wallet is an **ERC-4337 account-abstraction smart wallet** on Base,
+where transaction authorization is a **GitHub Actions OIDC JWT** — not a private key.
+
+**GitHub OIDC**: every GHA run can request a short-lived JWT signed by GitHub's
+RSA key. The JWT contains claims: `repository`, `workflow`, `ref`, `sha`,
+`repository_visibility`, etc. Anyone can verify it against GitHub's public JWKS.
+No one can forge it outside of a real GHA run.
+
+**The wallet's `validateUserOp`**:
+1. Decodes the JWT from the UserOperation signature field
+2. Verifies RSA signature against GitHub's cached public key (OpenZeppelin RSA lib + EIP-198 modexp precompile)
+3. Checks claims:
+   - `iss == "https://token.actions.githubusercontent.com"`
+   - `repository == "<owner>/<repo>"`
+   - `workflow == "owner.yml"`
+   - `ref == "refs/heads/main"`
+   - `repository_visibility == "public"` (rejects if repo goes private)
+   - `exp > block.timestamp`
+4. Checks destination constraints (only allowed contracts: OpenRouter top-up, bonding curve, USDC/WETH)
+5. Checks daily spend cap (immutable in contract)
+
+**No private key exists.** The wallet is controlled by a cryptographic proof
+that specific code is running in a specific public repo on GitHub's infrastructure.
+
+**What this proves:**
+- The repo maintainer cannot move funds (there is no key to hold)
+- Funds can only move when the open-source owner.yml workflow runs
+- The repo must be public at the time of every transaction
+- Every tx links to a specific GHA run_id and commit sha
+- The contract's spend caps and destination locks are immutable
+
+### Token & Funding
+
+Each terrarium project gets a **Zora bonding curve token** on Base.
+
+- Created via Zora factory (`0x777777751622c0d3258f214F9DF38E35BF45baF3`)
+- The OIDC wallet is set as `payoutRecipient` and in the `owners` array
+- Bonding curve: mint on buy, burn on sell, ETH reserve
+- 1% trading fee: 50% to project treasury, 20% to Zora, 30% to referrers
+- Graduates to Uniswap V3 at ~$69k market cap, LP locked forever
+
+**Tokens are donations.** Buying the token funds the project. The token is proof
+of support — an on-chain receipt. Token holders receive no revenue, no governance
+rights, no dividends. Trading fees flow to the project treasury, not to holders.
+The bonding curve is a permissionless donation interface with a refund option.
+
+### Inference & Budget
+
+**OpenRouter** is the inference provider. Model assignments live in GitHub repo
+variables (`TERRARIUM_MODEL_OWNER`, `_HIGH`, `_MEDIUM`, `_LOW`), not in code.
+
+**Budget flow:**
+1. Treasury holds ETH from bonding curve fees
+2. Owner swaps ETH → USDC on Base (via Uniswap or similar)
+3. Owner calls OpenRouter crypto payments API (`POST /api/v1/credits/coinbase`)
+   with `{ amount, sender: wallet, chain_id: "8453" }` — returns calldata
+4. Owner signs + broadcasts the top-up tx via the OIDC wallet
+5. OpenRouter credits land, employees use them for inference
+
+**Model catalog:** Owner has access to a catalog of models with coding benchmarks
+and token costs. Each wake cycle, the owner reasons about model strategy —
+adjusting tiers based on budget, run rate, and projected runway.
+
+**Employee isolation:** Employees only have the `OPENROUTER_API_KEY` (GHA
+environment secret). They cannot top up, cannot access the wallet, cannot
+access the token. Worst case if the key leaks: someone burns remaining credits.
+
+### Owner Memory
+
+**JOURNAL.md** — appended by the owner at the end of each wake cycle. Contains:
+budget snapshot, model assignments, decisions made, project health assessment.
+On the next wake, the owner reads the last 5 journal entries to regain context.
+This is the owner's persistent memory across runs.
 
 ---
 
@@ -26,48 +110,60 @@ Money runs out → models downgrade, task cadence slows.
 ```
 terrarium/
   packages/
-    cli/                   # npx terrarium --install
+    contracts/               # Solidity: OIDC-gated ERC-4337 wallet
       src/
-        index.ts           # entry point — install wizard
-        prompts.ts         # onboarding questions (repo, wallet, models, cron)
-        secrets.ts         # gh secret set via GitHub API
-        workflows.ts       # render + push .github/workflows/
-        config.ts          # write terrarium.json to target repo
-    core/                  # shared logic, imported by GHA steps
+        TerrariumWallet.sol  # ERC-4337 account with JWT validation
+        JwtValidator.sol     # RSA signature verification + claim parsing
+        JwksRegistry.sol     # Cached GitHub OIDC public keys, permissionless update
+        SpendPolicy.sol      # Daily caps, destination allowlist (immutable)
+      test/
+      script/
+        DeployWallet.s.sol   # Deterministic CREATE2 deploy
+    core/                    # TypeScript: shared logic for GHA steps
       src/
-        budget.ts          # read USDC balance from Base, compute run-rate
-        models.ts          # model tier map, upgrade/downgrade logic
-        tasks.ts           # GitHub issues: list, claim, submit, feedback
-        pr.ts              # PR create, review, merge
-        inference.ts       # thin wrapper: POST to inference API, never exposes key
-        config.ts          # terrarium.json R/W
-        activity.ts        # activity log (appended to activity.jsonl)
-        mail.ts            # MAIL.md append + read
+        config.ts            # terrarium.json R/W (wallet, cron, budget thresholds)
+        budget.ts            # OpenRouter balance check, crypto top-up calldata
+        models.ts            # model catalog, tier upgrade/downgrade, cost estimation
+        inference.ts         # thin wrapper: OpenRouter API, key from env
+        tasks.ts             # GitHub issues via gh CLI: list, claim, next-task, file
+        pr.ts                # PR create, review (inference), merge via gh CLI
+        mail.ts              # MAIL.md append/read/respond
+        activity.ts          # activity.jsonl append/read
+        journal.ts           # JOURNAL.md append/read for owner memory
+        wallet.ts            # construct ERC-4337 UserOps, attach OIDC JWT as signature
+        token.ts             # Zora factory interaction: deploy token, read bonding curve state
+    cli/                     # npx terrarium --install
+      src/
+        index.ts             # entry point — install wizard
+        prompts.ts           # onboarding questions
+        secrets.ts           # gh secret set + gh variable set
+        workflows.ts         # render GHA workflow YAMLs
+        config-writer.ts     # write terrarium.json
+        plan-writer.ts       # write stub PLAN.md
+        deploy-wallet.ts     # deploy OIDC wallet via CREATE2
+        deploy-token.ts      # deploy Zora bonding curve token
+        owner.ts             # terrarium-owner entry point (GHA cron)
+        employee.ts          # terrarium-employee entry point (GHA dispatch)
+        review.ts            # terrarium-review entry point (GHA PR trigger)
   templates/
-    .github/
-      workflows/
-        owner.yml.hbs      # cron: owner wake cycle
-        employee.yml.hbs   # manual dispatch: single task run
-        pr-review.yml.hbs  # triggered on PR open: automated review
-    terrarium.json.hbs     # initial config template
-    PLAN.md.hbs            # initial PLAN.md stub for target project
+    .github/workflows/
+      owner.yml.hbs
+      employee.yml.hbs
+      pr-review.yml.hbs
+    terrarium.json.hbs
+    PLAN.md.hbs
 ```
 
 ---
 
 ## Config: `terrarium.json`
 
-Checked into the target repo. Contains no secrets.
+Checked into the target repo. Contains no secrets, no model assignments.
 
 ```json
 {
   "wallet": "0xABC...",
-  "models": {
-    "owner":    "claude-opus-4-6",
-    "high":     "claude-opus-4-6",
-    "medium":   "claude-sonnet-4-6",
-    "low":      "claude-haiku-4-5-20251001"
-  },
+  "token": "0xDEF...",
   "owner_cron": "*/30 * * * *",
   "max_concurrent_employees": 3,
   "budget": {
@@ -77,181 +173,229 @@ Checked into the target repo. Contains no secrets.
 }
 ```
 
-GitHub Secrets (never in config):
-- `ANTHROPIC_API_KEY` — inference
-- `BASE_WALLET_PRIVATE_KEY` — read-only; used only to check balance, never to sign transactions
+Model assignments: GitHub repo variables (`TERRARIUM_MODEL_OWNER`, `_HIGH`, `_MEDIUM`, `_LOW`).
+Auto-review toggle: `TERRARIUM_AUTO_REVIEW` repo variable.
+Secrets: `OPENROUTER_API_KEY` (GHA environment secret, employee + owner).
+
+---
+
+## Smart Wallet Contract
+
+### `TerrariumWallet.sol`
+
+ERC-4337 `BaseAccount` implementation. No ECDSA signer. Authorization is a GitHub OIDC JWT.
+
+```
+validateUserOp(userOp, userOpHash, missingAccountFunds):
+  1. abi.decode(userOp.signature) → (header, payload, rsaSig)
+  2. RSA.pkcs1Sha256(sha256(header.payload), rsaSig, e, n)  // OZ RSA lib
+  3. parse claims from payload
+  4. require iss == GITHUB_OIDC_ISSUER
+  5. require keccak256(repository) == REPO_HASH
+  6. require keccak256(workflow) == WORKFLOW_HASH
+  7. require keccak256(ref) == REF_HASH
+  8. require keccak256(repository_visibility) == keccak256("public")
+  9. require exp > block.timestamp
+  10. SpendPolicy.check(userOp.callData)  // destination + daily cap
+  11. return _packValidationData(false, exp, iat)
+```
+
+### `JwksRegistry.sol`
+
+Stores GitHub's RSA public keys (modulus + exponent). Permissionless update:
+anyone can submit a new key by providing a JWT signed with the old key that
+attests to the new key. Self-bootstrapping rotation — no admin, no oracle.
+
+### `SpendPolicy.sol`
+
+Immutable constraints set at deploy:
+- `MAX_DAILY_SPEND`: e.g., $200 worth of ETH/USDC
+- `ALLOWED_DESTINATIONS`: OpenRouter Coinbase Commerce address, Uniswap router, WETH/USDC contracts
+- No admin function to change these — they are constructor args, frozen forever
 
 ---
 
 ## GitHub Actions Workflows
 
-### `owner.yml` — Scheduled cron (default: every 30 min)
+### `owner.yml` — Scheduled cron
 
-Triggered by: schedule cron (configurable in `terrarium.json`)
-
-Steps:
-1. **Budget check** — read USDC balance from Base RPC; compute daily run-rate from `activity.jsonl`
-2. **Model adjustment** — if balance < `downgrade_threshold`, downgrade tiers one step; if balance < `pause_threshold`, set all models to `null` (halt new tasks); write back to `terrarium.json`, commit
-3. **Cron self-adjustment** — if budget is tight, lengthen `owner_cron`; commit
-4. **Audit** — detect stale in-progress issues (PR open > 24h with no activity); re-open to backlog
-5. **Plan → Issues** — read `PLAN.md`, reconcile against open GitHub issues, file any missing ones with appropriate complexity/priority labels
-6. **Mail** — read `MAIL.md`, respond inline, bump stuck tasks
-7. **PR review** — for each open PR: run inference review; if adequate, merge; if not, comment + add `needs-changes` label
-8. **Stakeholder update** — if there are >= N merged PRs since last update, post a GitHub issue summarizing recent activity
-
-### `employee.yml` — Manual dispatch (or triggered by owner)
-
-Inputs:
-- `complexity` (low / medium / high) — determines model tier
-- `issue_number` (optional) — if blank, auto-selects highest-priority available issue
-
-Steps:
-1. **Claim** — comment on issue + add `in-progress` label (GHA concurrency group prevents double-claim)
-2. **Infer** — run Claude on the issue using the model for the given complexity tier; Claude writes code
-3. **Submit** — `git push` branch, `gh pr create`; remove `in-progress` label
-4. **On failure** — append to `MAIL.md`; remove `in-progress` label; re-open issue
-
-GHA concurrency:
 ```yaml
-concurrency:
-  group: terrarium-issue-${{ inputs.issue_number }}
-  cancel-in-progress: false
+permissions:
+  id-token: write   # OIDC token request
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write    # update repo variables
 ```
 
-### `pr-review.yml` — Triggered on PR open/sync
+Steps:
+1. Checkout repo (full depth)
+2. Request OIDC token (`audience: https://terrarium.xyz` or contract address)
+3. **Budget check** — read wallet ETH/USDC balance on Base; read OpenRouter credit balance
+4. **Top-up if needed** — construct UserOp to swap ETH→USDC and call OpenRouter crypto payments API; sign with OIDC JWT; submit via bundler (Pimlico)
+5. **Model strategy** — read model catalog, compare costs vs. budget, adjust tier variables via `gh variable set`; toggle auto-review based on run rate
+6. **Journal read** — load last 5 JOURNAL.md entries for context
+7. **Mail** — read MAIL.md, respond to unanswered entries via inference
+8. **PR review** — if auto-review enabled, review open bot PRs; merge or request changes
+9. **Plan → Issues** — reconcile PLAN.md against open issues, file missing ones
+10. **Stakeholder update** — if >= 5 merges since last update, post summary issue
+11. **Journal write** — append cycle entry to JOURNAL.md
+12. Commit + push any file changes (JOURNAL.md, MAIL.md)
+
+### `employee.yml` — Manual dispatch
+
+```yaml
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+```
+
+Inputs: `complexity` (choice), `issue_number` (optional)
 
 Steps:
-1. Skip if PR has `draft` label or was opened by a human (non-`github-actions[bot]` author needs human review)
-2. Run inference review with `medium` model
-3. If review passes: approve + add `auto-approved` label
-4. If review fails: request changes + add `needs-changes` label
+1. Checkout
+2. Read model from `TERRARIUM_MODEL_<COMPLEXITY>` env var (injected from `vars.*`)
+3. Auto-select issue if none provided (highest priority at or below complexity)
+4. Claim issue (label + comment)
+5. Run `claude --print` with issue context, using assigned model
+6. Push branch, create PR (body includes model name)
+7. On failure: unclaim, append MAIL.md
+
+Concurrency: `terrarium-issue-${{ inputs.issue_number || 'auto' }}`
+
+### `pr-review.yml` — PR trigger
+
+Only fires for PRs by `github-actions[bot]`. Runs inference review with medium model.
+Approves + merges or requests changes.
 
 ---
 
-## Budget & Model Logic
+## Security Model
 
 ```
-Run-rate (USD/day) = sum of inference costs in activity.jsonl over last 7 days / 7
-
-Tiers (example):
-  owner:  opus   → sonnet  → haiku  → null
-  high:   opus   → sonnet  → haiku  → null
-  medium: sonnet → haiku   → haiku  → null
-  low:    haiku  → haiku   → null   → null
-
-Downgrade trigger: projected days remaining < 3
-Pause trigger:     balance < $1
-Resume trigger:    balance > $5 (re-read wallet on each owner wake)
+Layer                  What's protected                    How
+───────────────────────────────────────────────────────────────────────────────
+Smart contract         Funds can't go to wrong address     Immutable destination allowlist + daily cap
+OIDC binding           Only owner.yml can sign txs         JWT claim verification (repo, workflow, ref, visibility)
+Repo visibility        Code must be auditable              Contract rejects txs if repo is private
+OpenRouter key         Employees can't overspend           Credits capped by owner's top-up rate
+Employee isolation     No financial access                 Only has OpenRouter key, can't top up or access wallet
 ```
 
-Owner writes tier changes to `terrarium.json` and commits them.
-Employees read model name from `terrarium.json` at task start.
+Worst case at each compromise level:
+
+| Compromised | Blast radius |
+|---|---|
+| Employee GHA run | Burns remaining OpenRouter credits (≤ last top-up amount) |
+| OpenRouter key leaks | Same — owner rotates key next cycle |
+| Owner GHA fully compromised | Contract limits: ≤ daily cap, only to allowed destinations |
+| Repo goes private | Wallet freezes — contract rejects all txs |
+| Repo admin changes owner.yml | Public git diff visible; OIDC sha claim pins the commit |
 
 ---
 
 ## `npx terrarium --install`
 
-Interactive wizard that runs in any existing GitHub repo.
+Interactive wizard, run in any existing GitHub repo.
 
-Prompts:
-1. GitHub repo (detected from `git remote`)
-2. Base wallet address (for tip jar; read-only)
-3. Anthropic API key (written to GitHub Secrets, never stored locally)
-4. Initial model tiers (defaults shown)
-5. Owner cron schedule (default: every 30 min)
-6. Max concurrent employees (default: 3)
-
-Actions:
-1. Write `terrarium.json` to repo root
-2. Write `.github/workflows/owner.yml`, `employee.yml`, `pr-review.yml`
-3. Write stub `PLAN.md` (if not present)
-4. Set GitHub Secrets via API: `ANTHROPIC_API_KEY`, `BASE_RPC_URL`
-5. Commit + push all files
-6. Print tip jar address + instructions
+1. Detect repo from `git remote`
+2. Prompt: owner cron, max employees, budget thresholds
+3. Prompt: initial model tiers (defaults: kimi-k2.5 owner/high, qwen3.5 medium/low)
+4. Prompt: OpenRouter API key
+5. **Deploy OIDC wallet** — deterministic CREATE2 deploy on Base, parameterized by repo identity
+6. **Deploy Zora token** — call factory with wallet as `payoutRecipient` + `owners`
+7. Write `terrarium.json` (wallet address, token address, cron, budget)
+8. Write `.github/workflows/` (owner, employee, pr-review)
+9. Write stub `PLAN.md` if missing
+10. Set GHA secrets: `OPENROUTER_API_KEY`
+11. Set GHA variables: model tiers, auto-review, wallet address
+12. Commit + push
+13. Print: token address, donation link, wallet address
 
 ---
 
 ## Task Lifecycle
 
 ```
-OWNER (cron)                         EMPLOYEE (dispatch)
-────────────────────────────────────────────────────────────
+SUPPORTER                          OWNER (cron)                         EMPLOYEE (dispatch)
+────────────────────────────────────────────────────────────────────────────────────────────
 
-[owner wakes]
-  check balance → ok
-  plan → file issue #42
-    labels: complexity:medium, priority:high
+buys $PROJECT token on Base
+  → ETH enters bonding curve
+  → 50% trading fee → treasury
 
-                                     [owner triggers employee.yml]
-                                     or [human dispatches manually]
-                                       inputs: complexity=medium
+                                   [owner wakes]
+                                   OIDC token → sign UserOp
+                                   check balance → $42 ETH
+                                   swap ETH → USDC → top up OpenRouter
+                                   read JOURNAL.md → regain context
+                                   read PLAN.md → file issue #7
+                                     labels: complexity:medium, priority:high
+                                   set TERRARIUM_MODEL_MEDIUM=kimi-k2.5
+                                     (budget allows upgrade)
+                                   write JOURNAL.md → "upgraded medium tier, filed #7"
 
-                                     claim issue #42
-                                       add in-progress label
-                                       concurrency group locks
+                                                                        [owner dispatches employee.yml]
+                                                                        model = vars.TERRARIUM_MODEL_MEDIUM
+                                                                        claim issue #7
+                                                                        run claude → implement
+                                                                        push branch, create PR
+                                                                          PR body: "Model: kimi-k2.5"
 
-                                     run claude on issue #42
-                                       model: terrarium.json["medium"]
+                                   [owner wakes]
+                                   review PR → approved → merge
+                                   stakeholder update: "shipped #7"
+                                   write JOURNAL.md
 
-                                     ┌─ happy path ──────────────┐
-                                     │ push branch               │
-                                     │ gh pr create              │
-                                     │ remove in-progress label  │
-                                     └───────────────────────────┘
-
-                                     ┌─ stuck path ───────────────┐
-                                     │ append MAIL.md             │
-                                     │ remove in-progress label   │
-                                     └────────────────────────────┘
-
-[owner wakes]
-  read MAIL.md → respond
-    bump complexity if needed
-  review open PRs
-    auto-merge if approved
-  check balance → low
-    downgrade medium: sonnet → haiku
-    commit terrarium.json
+buys more $PROJECT
+  → more ETH → treasury
+  → owner has more budget
+  → upgrades to better models
+  → faster, higher quality output
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1 — `packages/core`
-1. `config.ts` — read/write `terrarium.json`
-2. `budget.ts` — Base RPC balance read, run-rate from activity log
-3. `models.ts` — tier map, downgrade/upgrade logic
-4. `inference.ts` — thin wrapper around Anthropic SDK (key from env, never exported)
-5. `tasks.ts` — GitHub issues: list open, claim, unclaim, next-task selection
-6. `pr.ts` — create PR, review (inference), merge
-7. `mail.ts` — append/read MAIL.md
-8. `activity.ts` — append/read activity.jsonl
+### Phase 1 — Smart Wallet Contract (`packages/contracts`)
+1. `TerrariumWallet.sol` — ERC-4337 BaseAccount with OIDC JWT validation
+2. `JwtValidator.sol` — RSA signature verification, JWT claim parsing
+3. `JwksRegistry.sol` — GitHub public key cache with permissionless rotation
+4. `SpendPolicy.sol` — daily cap + destination allowlist
+5. Deploy script — deterministic CREATE2 parameterized by repo identity
+6. Tests — forge tests with mock JWTs
 
-### Phase 2 — GHA workflow templates
-9. `owner.yml.hbs` — full owner cron logic as GHA steps
-10. `employee.yml.hbs` — single task dispatch
-11. `pr-review.yml.hbs` — PR auto-review
+### Phase 2 — Wallet Client (`packages/core`)
+7. `wallet.ts` — construct UserOperations, attach OIDC JWT, submit to bundler
+8. `token.ts` — Zora factory: deploy token, read price/supply, sell tokens
+9. `budget.ts` — rewrite: check wallet balance on Base, OpenRouter balance, construct top-up tx
 
-### Phase 3 — `packages/cli` (npx terrarium)
-12. `prompts.ts` — onboarding questions
-13. `secrets.ts` — GitHub Secrets API
-14. `workflows.ts` — render templates, push to repo
-15. `index.ts` — wire everything together
+### Phase 3 — Install Flow (`packages/cli`)
+10. `deploy-wallet.ts` — call CREATE2 deploy from installer
+11. `deploy-token.ts` — call Zora factory from installer
+12. Update `prompts.ts`, `secrets.ts`, `workflows.ts` for new architecture
 
-### Phase 4 — Polish
-16. Stakeholder update post (owner step 8)
-17. GHA usage check (owner: skip wake if minutes quota low)
-18. Balance top-up detection (resume from paused state on refill)
-19. `terrarium status` CLI command — show balance, run-rate, open tasks, active employees
+### Phase 4 — Core (already built, needs updates)
+13. Update `owner.ts` — OIDC token request, UserOp signing, top-up flow
+14. Update `employee.ts` — reads model from env var (already done)
+15. Update `workflows.ts` — add `id-token: write` permission to owner
+
+### Phase 5 — Polish
+16. `terrarium status` CLI — show wallet balance, token price, open tasks, model tiers
+17. Gas estimation for OIDC verification (optimize claim parsing)
+18. Fallback: if OIDC verification gas is too high, ZK-JWT alternative path
 
 ---
 
 ## Principles
 
-- **Employees never see the inference key.** `inference.ts` reads `ANTHROPIC_API_KEY` from env (injected by GHA), exposes only a `complete(prompt, model)` function.
-- **Owner never sees the inference key.** Owner configures model names in `terrarium.json`; actual key lives only in GHA Secrets.
-- **Wallet is read-only.** Only balance queries hit the Base RPC. No signing, no sends.
-- **All config is in the repo.** `terrarium.json` is checked in. State is in GitHub (issues, labels, PRs, activity.jsonl).
-- **GHA concurrency = mutex.** No hardlink tricks needed; GHA concurrency groups prevent double-claiming.
-- **Self-modifying config is normal.** Owner commits model tier changes and cron adjustments. This is expected behavior, not a bug.
+- **No human holds the keys.** The wallet is an OIDC-gated smart contract. There is no private key.
+- **Code is the authority.** The owner's behavior is determined by open-source, auditable workflow code pinned to a specific commit.
+- **Repo must be public.** The contract rejects transactions if `repository_visibility != "public"`.
+- **Immutable financial constraints.** Daily spend caps and allowed destinations are set at deploy and cannot be changed.
+- **Employees are credit-bounded.** They use OpenRouter credits and have no financial access.
+- **Tokens are donations.** Buying the project's token funds development. Holders receive no revenue, governance, or dividends. Trading fees flow to the treasury.
+- **The owner is autonomous.** It decides model tiers, budget allocation, task priority, and when to top up — within the contract's constraints.
+- **Everything is traceable.** Every on-chain tx links to a GHA run_id and commit sha. Every code change is a public git commit.
