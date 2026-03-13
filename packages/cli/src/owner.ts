@@ -20,6 +20,7 @@ import { appendJournalEntry, readJournalContext } from "../../core/src/journal.j
 import { listOpenPrs, reviewPr, approvePr, requestChanges, mergePr } from "../../core/src/pr.js";
 import { listOpenIssues, fileIssue } from "../../core/src/tasks.js";
 import { complete } from "../../core/src/inference.js";
+import { updateReadmeStatus, type StatusData } from "../../core/src/status.js";
 
 function gitRun(cmd: string, cwd: string): void {
   execSync(cmd, { cwd, stdio: "inherit" });
@@ -497,6 +498,39 @@ async function main(): Promise<void> {
 
   // Write journal entry for this cycle
   await writeJournalEntry(repoRoot, repoOwner, repoName, balance, dailyRunRate, projectedDaysRemaining, currentModels, currentAutoReview, ownerModel, journalContext);
+
+  // Update README with live status
+  console.log("Updating README status...");
+  try {
+    const openIssues = listOpenIssues(repoOwner, repoName);
+    const openPrs = listOpenPrs(repoOwner, repoName);
+    const allActivity = await readActivityLog(repoRoot);
+    const totalMerged = allActivity.filter((e) => e.type === "pr_merged").length;
+
+    const statusData: StatusData = {
+      walletAddress: config.wallet,
+      tokenAddress: (config as Record<string, unknown>).token as string | null ?? null,
+      balanceEth: balance,
+      balanceUsd: balance, // TODO: ETH→USD conversion
+      openRouterCredits: 0, // TODO: read from OpenRouter API
+      dailyRunRate,
+      projectedDays: projectedDaysRemaining,
+      models: currentModels,
+      autoReview: currentAutoReview,
+      openIssues: openIssues.length,
+      openPrs: openPrs.length,
+      totalMerged,
+      zoraUrl: (config as Record<string, unknown>).token
+        ? `https://zora.co/coin/base/${(config as Record<string, unknown>).token}`
+        : null,
+      basescanUrl: `https://basescan.org/address/${config.wallet}`,
+    };
+
+    await updateReadmeStatus(repoRoot, statusData);
+    console.log("  README status updated.");
+  } catch (err) {
+    console.error("  Failed to update README status:", err);
+  }
 
   await commitAndPush(repoRoot, "chore(terrarium): owner cycle updates");
   console.log("[terrarium-owner] Owner cycle complete");
