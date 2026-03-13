@@ -12,7 +12,7 @@ pub struct Balance {
 // ── Constants ──────────────────────────────────────────────────────────
 
 const DEFAULT_BASE_RPC: &str = "https://mainnet.base.org";
-const OPENROUTER_CREDITS_URL: &str = "https://openrouter.ai/api/v1/credits";
+const OPENROUTER_AUTH_KEY_URL: &str = "https://openrouter.ai/api/v1/auth/key";
 const OPENROUTER_COINBASE_URL: &str = "https://openrouter.ai/api/v1/credits/coinbase";
 
 /// Rough ETH/USD price used when a live feed is unavailable.
@@ -36,20 +36,22 @@ struct JsonRpcResponse {
     error: Option<serde_json::Value>,
 }
 
-// ── OpenRouter credits response ────────────────────────────────────────
+// ── OpenRouter auth/key response ──────────────────────────────────────
 
 #[derive(Deserialize)]
-struct CreditsResponse {
+struct AuthKeyResponse {
     #[serde(default)]
-    data: Option<CreditsData>,
+    data: Option<AuthKeyData>,
 }
 
 #[derive(Deserialize)]
-struct CreditsData {
+struct AuthKeyData {
     #[serde(default)]
-    total_credits: f64,
+    limit: Option<f64>,
     #[serde(default)]
-    total_usage: f64,
+    usage: f64,
+    #[serde(default)]
+    limit_remaining: Option<f64>,
 }
 
 // ── OpenRouter coinbase top-up response ────────────────────────────────
@@ -117,28 +119,42 @@ pub async fn get_wallet_balance(wallet: &str, rpc_url: &str) -> Result<Balance> 
 }
 
 /// Return the remaining OpenRouter credit balance in USD.
+///
+/// Uses the `/api/v1/auth/key` endpoint which returns usage and limit info.
+/// If `limit_remaining` is available, use that directly. Otherwise compute
+/// from `limit - usage`. Keys without a limit return usage as a negative
+/// balance (pay-as-you-go).
 pub async fn get_openrouter_credits(api_key: &str) -> Result<f64> {
     let client = reqwest::Client::new();
     let res = client
-        .get(OPENROUTER_CREDITS_URL)
+        .get(OPENROUTER_AUTH_KEY_URL)
         .header("Authorization", format!("Bearer {api_key}"))
         .send()
         .await
-        .context("failed to fetch OpenRouter credits")?;
+        .context("failed to fetch OpenRouter auth/key")?;
 
     let status = res.status();
     if !status.is_success() {
         let text = res.text().await.unwrap_or_default();
-        anyhow::bail!("OpenRouter credits returned {status}: {text}");
+        anyhow::bail!("OpenRouter auth/key returned {status}: {text}");
     }
 
-    let credits: CreditsResponse = res
+    let auth: AuthKeyResponse = res
         .json()
         .await
-        .context("failed to parse OpenRouter credits response")?;
+        .context("failed to parse OpenRouter auth/key response")?;
 
-    match credits.data {
-        Some(d) => Ok(d.total_credits - d.total_usage),
+    match auth.data {
+        Some(d) => {
+            if let Some(remaining) = d.limit_remaining {
+                Ok(remaining)
+            } else if let Some(limit) = d.limit {
+                Ok(limit - d.usage)
+            } else {
+                // No limit set — report usage as negative (pay-as-you-go)
+                Ok(-d.usage)
+            }
+        }
         None => Ok(0.0),
     }
 }
