@@ -8,3 +8,4 @@ packages/core/src/*.js
 packages/core/src/*.d.ts
 packages/core/src/*.js.map
 packages/core/src/*.d.ts.map
+.claude/

@@ -97,7 +97,8 @@ async function main(): Promise<void> {
   const repoRoot = process.cwd();
   console.log(`[terrarium-employee] Starting task in ${repoRoot}`);
 
-  const config = await readConfig(repoRoot);
+  // config is still read for wallet/budget fields; models come from env vars
+  await readConfig(repoRoot);
   const { owner: repoOwner, name: repoName } = getRepoFromRemote();
 
   const rawComplexity = process.env.TASK_COMPLEXITY ?? "medium";
@@ -114,7 +115,13 @@ async function main(): Promise<void> {
     issueNumber = null;
   }
 
-  const model = config.models[complexity];
+  // Models live in GitHub repo variables, injected as env vars by the workflow
+  const MODEL_ENV_VARS: Record<Complexity, string> = {
+    low: "TERRARIUM_MODEL_LOW",
+    medium: "TERRARIUM_MODEL_MEDIUM",
+    high: "TERRARIUM_MODEL_HIGH",
+  };
+  const model = process.env[MODEL_ENV_VARS[complexity]] ?? null;
   if (!model) {
     console.log(
       `Model for complexity '${complexity}' is null (paused). Exiting.`

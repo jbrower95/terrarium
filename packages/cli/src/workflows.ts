@@ -2,6 +2,14 @@ import fs from "fs/promises";
 import path from "path";
 import type { InstallAnswers } from "./prompts.js";
 
+/** Shared env block injected into any step that needs model config from repo variables */
+const MODEL_VARS_ENV = `\
+          TERRARIUM_MODEL_OWNER: \${{ vars.TERRARIUM_MODEL_OWNER }}
+          TERRARIUM_MODEL_HIGH: \${{ vars.TERRARIUM_MODEL_HIGH }}
+          TERRARIUM_MODEL_MEDIUM: \${{ vars.TERRARIUM_MODEL_MEDIUM }}
+          TERRARIUM_MODEL_LOW: \${{ vars.TERRARIUM_MODEL_LOW }}
+          TERRARIUM_AUTO_REVIEW: \${{ vars.TERRARIUM_AUTO_REVIEW }}`;
+
 function renderOwnerWorkflow(answers: InstallAnswers): string {
   return `name: Terrarium Owner
 on:
@@ -20,10 +28,14 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
+      # Needed to update repo variables (model assignments)
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
           token: \${{ secrets.GITHUB_TOKEN }}
+          # Fetch full history so git push works
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -33,6 +45,7 @@ jobs:
         env:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+${MODEL_VARS_ENV}
 `;
 }
 
@@ -66,10 +79,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: \${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - run: npm ci
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
       - name: Run employee task
         run: npx terrarium-employee
         env:
@@ -77,6 +93,7 @@ jobs:
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
           TASK_COMPLEXITY: \${{ inputs.complexity }}
           TASK_ISSUE_NUMBER: \${{ inputs.issue_number }}
+${MODEL_VARS_ENV}
 `;
 }
 
@@ -93,6 +110,7 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Only auto-review PRs opened by the terrarium employee workflow
     if: github.actor == 'github-actions[bot]'
     permissions:
       contents: read
@@ -109,6 +127,7 @@ jobs:
           ANTHROPIC_API_KEY: \${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: \${{ github.event.pull_request.number }}
+${MODEL_VARS_ENV}
 `;
 }
 

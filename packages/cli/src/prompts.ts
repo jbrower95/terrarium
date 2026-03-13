@@ -83,26 +83,26 @@ export async function runInstallWizard(): Promise<InstallAnswers> {
     {
       type: "input",
       name: "ownerModel",
-      message: "Owner model:",
-      default: "claude-opus-4-6",
+      message: "Owner model (manages budget, reviews PRs, files issues):",
+      default: "openrouter/moonshotai/kimi-k2.5",
     },
     {
       type: "input",
       name: "highModel",
       message: "High complexity model:",
-      default: "claude-opus-4-6",
+      default: "openrouter/moonshotai/kimi-k2.5",
     },
     {
       type: "input",
       name: "mediumModel",
       message: "Medium complexity model:",
-      default: "claude-sonnet-4-6",
+      default: "openrouter/qwen/qwen3.5-35b-a3b",
     },
     {
       type: "input",
       name: "lowModel",
       message: "Low complexity model:",
-      default: "claude-haiku-4-5-20251001",
+      default: "openrouter/qwen/qwen3.5-35b-a3b",
     },
     {
       type: "input",
