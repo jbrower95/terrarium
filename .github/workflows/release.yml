@@ -1,0 +1,40 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+
+      - name: Install musl tools
+        run: sudo apt-get install -y musl-tools
+
+      - name: Build release binaries
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl -p terrarium-owner
+          cargo build --release --target x86_64-unknown-linux-musl -p terrarium-employee
+
+      - name: Rename binaries with platform suffix
+        run: |
+          cp target/x86_64-unknown-linux-musl/release/terrarium-owner terrarium-owner-linux-x86_64
+          cp target/x86_64-unknown-linux-musl/release/terrarium-employee terrarium-employee-linux-x86_64
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            terrarium-owner-linux-x86_64
+            terrarium-employee-linux-x86_64
+          generate_release_notes: true

@@ -1,0 +1,57 @@
+name: Terrarium Owner
+
+on:
+  workflow_call:
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+
+permissions:
+  id-token: write
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  owner:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download terrarium-owner
+        run: |
+          RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-owner-linux-x86_64"
+          curl -sL "$RELEASE_URL" -o terrarium-owner
+          chmod +x terrarium-owner
+
+      - name: Run owner cycle
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          TERRARIUM_MODEL_OWNER: ${{ vars.TERRARIUM_MODEL_OWNER }}
+          TERRARIUM_MODEL_HIGH: ${{ vars.TERRARIUM_MODEL_HIGH }}
+          TERRARIUM_MODEL_MEDIUM: ${{ vars.TERRARIUM_MODEL_MEDIUM }}
+          TERRARIUM_MODEL_LOW: ${{ vars.TERRARIUM_MODEL_LOW }}
+          TERRARIUM_AUTO_REVIEW: ${{ vars.TERRARIUM_AUTO_REVIEW }}
+          BASE_RPC_URL: ${{ vars.BASE_RPC_URL }}
+        run: |
+          ./terrarium-owner 2>&1 | tee owner-output.log
+          # Extract artifact JSON (last line of stdout)
+          tail -1 owner-output.log > artifact.json
+
+      - name: Upload run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrarium-owner-${{ github.run_id }}
+          path: artifact.json
+          retention-days: 90
+
+      - name: Push changes
+        run: |
+          git config user.name "terrarium[bot]"
+          git config user.email "terrarium[bot]@users.noreply.github.com"
+          git add JOURNAL.md README.md .github/workflows/ || true
+          git diff --cached --quiet || git commit -m "terrarium: owner cycle $(date -u +%Y-%m-%dT%H:%M:%S)"
+          git push
