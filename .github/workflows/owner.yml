@@ -2,9 +2,6 @@ name: Terrarium Owner
 
 on:
   workflow_call:
-    secrets:
-      OPENROUTER_API_KEY:
-        required: true
 
 permissions:
   id-token: write
