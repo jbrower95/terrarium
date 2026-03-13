@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+
+# Core src compiled artifacts (produced by CLI tsc cross-package build)
+packages/core/src/*.js
+packages/core/src/*.d.ts
+packages/core/src/*.js.map
+packages/core/src/*.d.ts.map

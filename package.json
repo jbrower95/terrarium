@@ -1,0 +1,16 @@
+{
+  "name": "terrarium-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=packages/core && npm run build --workspace=packages/cli",
+    "clean": "npm run clean --workspace=packages/core && npm run clean --workspace=packages/cli"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "name": "terrarium",
+  "version": "0.1.0",
+  "description": "Self-running project framework powered by GitHub Actions and Claude",
+  "type": "module",
+  "bin": {
+    "terrarium": "./dist/packages/cli/src/index.js",
+    "terrarium-owner": "./dist/packages/cli/src/owner.js",
+    "terrarium-employee": "./dist/packages/cli/src/employee.js",
+    "terrarium-review": "./dist/packages/cli/src/review.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "README.md"
+  ],
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "inquirer": "^9.3.7",
+    "viem": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/inquirer": "^9.0.7",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
