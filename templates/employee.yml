@@ -1,0 +1,55 @@
+name: Terrarium Employee
+
+on:
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Issue number to work on'
+        required: true
+        type: number
+      complexity:
+        description: 'Task complexity (low, medium, high)'
+        required: true
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  employee:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download terrarium-employee
+        run: |
+          RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-employee-linux-x86_64"
+          curl -sL "$RELEASE_URL" -o terrarium-employee
+          chmod +x terrarium-employee
+
+      - name: Run employee
+        env:
+          TERRARIUM_ISSUE: ${{ inputs.issue_number }}
+          TERRARIUM_COMPLEXITY: ${{ inputs.complexity }}
+          TERRARIUM_MODEL_LOW: ${{ vars.TERRARIUM_MODEL_LOW }}
+          TERRARIUM_MODEL_MEDIUM: ${{ vars.TERRARIUM_MODEL_MEDIUM }}
+          TERRARIUM_MODEL_HIGH: ${{ vars.TERRARIUM_MODEL_HIGH }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          ./terrarium-employee 2>&1 | tee employee-output.log
+          tail -1 employee-output.log > artifact.json
+
+      - name: Upload run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: terrarium-employee-${{ github.run_id }}-${{ inputs.issue_number }}
+          path: artifact.json
+          retention-days: 90
