@@ -83,7 +83,8 @@ async fn run() -> Result<()> {
     let first_run = !journal_path.exists();
 
     if first_run {
-        return handle_first_run(&repo_root, &cfg.wallet, &model_cfg).await;
+        let repo_slug = repo_slug();
+        return handle_first_run(&repo_root, &cfg.wallet, &model_cfg, &repo_slug).await;
     }
 
     // ── Step 3: Get wallet balance ───────────────────────────────────
@@ -274,10 +275,17 @@ async fn run() -> Result<()> {
         total_merged: 0, // TODO: track merged count
         zora_url: None,
         basescan_url: format!("https://basescan.org/address/{}", cfg.wallet),
+        repo_slug: Some(repo_slug.clone()),
     };
 
     if let Err(e) = status::update_readme_status(&repo_root, &status_data).await {
         eprintln!("warning: failed to update README status: {e:#}");
+    }
+
+    // ── Step 15b: Render and publish SVG status card ─────────────────
+    let svg = status::render_status_svg(&status_data);
+    if let Err(e) = status::publish_status_svg(&svg, &repo_slug).await {
+        eprintln!("warning: failed to publish SVG status card: {e:#}");
     }
 
     // ── Step 16: Build JournalEntry, append to journal ───────────────
@@ -329,6 +337,7 @@ async fn handle_first_run(
     repo_root: &PathBuf,
     wallet: &str,
     model_cfg: &ModelConfig,
+    repo_slug: &str,
 ) -> Result<()> {
     eprintln!("first run detected: initializing JOURNAL.md and README status block");
 
@@ -368,11 +377,18 @@ async fn handle_first_run(
         total_merged: 0,
         zora_url: None,
         basescan_url: format!("https://basescan.org/address/{}", wallet),
+        repo_slug: Some(repo_slug.to_string()),
     };
 
     status::update_readme_status(repo_root, &status_data)
         .await
         .context("failed to update README on first run")?;
+
+    // Publish SVG status card on first run too.
+    let svg = status::render_status_svg(&status_data);
+    if let Err(e) = status::publish_status_svg(&svg, repo_slug).await {
+        eprintln!("warning: failed to publish SVG status card on first run: {e:#}");
+    }
 
     // Commit the initial files.
     git_commit_journal_and_readme(repo_root).await?;
