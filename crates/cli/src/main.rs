@@ -1,3 +1,4 @@
+use std::env;
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::process::Stdio;
@@ -135,24 +136,38 @@ async fn gh_variable_set(name: &str, value: &str) -> Result<()> {
 // Install steps
 // ---------------------------------------------------------------------------
 
+/// Check if stdin is a TTY (interactive terminal).
+fn is_interactive() -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        unsafe { libc::isatty(io::stdin().as_raw_fd()) != 0 }
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
 /// Step 1: Wallet setup
 async fn step_wallet(wallet_flag: Option<&str>) -> Result<String> {
     eprintln!();
     eprintln!("  Step 1: Wallet");
 
-    // In dev mode we skip actual deployment.
     eprintln!("  \u{26a0} Wallet deployment requires Base RPC + funded deployer. Skipping in dev mode.");
 
     let wallet = if let Some(w) = wallet_flag {
         w.to_string()
-    } else {
+    } else if is_interactive() {
         let input = prompt("  Wallet address (or press Enter for placeholder): ")?;
         if input.is_empty() {
-            // Generate a deterministic placeholder
             "0x0000000000000000000000000000000000000000".to_string()
         } else {
             input
         }
+    } else {
+        eprintln!("  (non-interactive: using placeholder)");
+        "0x0000000000000000000000000000000000000000".to_string()
     };
 
     eprintln!("  \u{2713} Wallet: {wallet}");
@@ -168,13 +183,16 @@ async fn step_token(token_flag: Option<&str>) -> Result<Option<String>> {
 
     let token_addr = if let Some(t) = token_flag {
         Some(t.to_string())
-    } else {
+    } else if is_interactive() {
         let input = prompt("  Token address (or press Enter to skip): ")?;
         if input.is_empty() {
             None
         } else {
             Some(input)
         }
+    } else {
+        eprintln!("  (non-interactive: skipping token)");
+        None
     };
 
     if let Some(ref addr) = token_addr {
@@ -193,8 +211,15 @@ async fn step_secrets(wallet: &str, token_addr: Option<&str>) -> Result<()> {
     eprintln!();
     eprintln!("  Step 3: Secrets");
 
-    // Prompt for OpenRouter API key
-    let api_key = prompt_secret("  OpenRouter API key: ")?;
+    // Prompt for OpenRouter API key (or read from env for non-interactive)
+    let api_key = if let Ok(key) = env::var("OPENROUTER_API_KEY") {
+        eprintln!("  (using OPENROUTER_API_KEY from environment)");
+        key
+    } else if is_interactive() {
+        prompt_secret("  OpenRouter API key: ")?
+    } else {
+        String::new()
+    };
 
     if api_key.is_empty() {
         eprintln!("  \u{26a0} No API key provided — skipping secret setup");
