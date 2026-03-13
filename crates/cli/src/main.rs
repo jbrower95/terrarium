@@ -378,7 +378,7 @@ on:
   workflow_dispatch: {}
 jobs:
   owner:
-    uses: jbrower95/terrarium/.github/workflows/owner.yml@main
+    uses: jbrower95/terrarium/.github/workflows/owner.yml@master
     permissions:
       id-token: write
       contents: write
