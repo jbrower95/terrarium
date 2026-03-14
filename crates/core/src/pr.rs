@@ -10,6 +10,10 @@ pub struct PullRequest {
     pub head_ref: String,
     pub diff_stats: String,
     pub head_sha: String,
+    /// "MERGEABLE", "CONFLICTING", or "UNKNOWN"
+    pub mergeable: String,
+    /// "SUCCESS", "FAILURE", "PENDING", or "UNKNOWN"
+    pub ci_status: String,
 }
 
 /// Intermediate struct for deserializing `gh pr list --json` output.
@@ -23,6 +27,10 @@ struct GhPullRequest {
     additions: u64,
     deletions: u64,
     head_ref_oid: String,
+    #[serde(default)]
+    mergeable: String,
+    #[serde(default)]
+    status_check_rollup: Vec<GhStatusCheck>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,8 +38,40 @@ struct GhAuthor {
     login: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct GhStatusCheck {
+    #[serde(default)]
+    conclusion: Option<String>,
+    #[serde(default)]
+    status: Option<String>,
+}
+
+/// Summarize CI status from status check rollup.
+fn summarize_ci(checks: &[GhStatusCheck]) -> String {
+    if checks.is_empty() {
+        return "UNKNOWN".to_string();
+    }
+    let any_failure = checks.iter().any(|c| {
+        c.conclusion.as_deref() == Some("FAILURE")
+            || c.conclusion.as_deref() == Some("failure")
+    });
+    if any_failure {
+        return "FAILURE".to_string();
+    }
+    let any_pending = checks.iter().any(|c| {
+        c.conclusion.is_none()
+            || c.status.as_deref() == Some("IN_PROGRESS")
+            || c.status.as_deref() == Some("QUEUED")
+    });
+    if any_pending {
+        return "PENDING".to_string();
+    }
+    "SUCCESS".to_string()
+}
+
 impl From<GhPullRequest> for PullRequest {
     fn from(gh: GhPullRequest) -> Self {
+        let ci_status = summarize_ci(&gh.status_check_rollup);
         PullRequest {
             number: gh.number,
             title: gh.title,
@@ -39,13 +79,15 @@ impl From<GhPullRequest> for PullRequest {
             head_ref: gh.head_ref_name,
             diff_stats: format!("+{} -{}", gh.additions, gh.deletions),
             head_sha: gh.head_ref_oid,
+            mergeable: if gh.mergeable.is_empty() { "UNKNOWN".to_string() } else { gh.mergeable.clone() },
+            ci_status,
         }
     }
 }
 
 /// List all open pull requests.
 pub async fn list_open_prs() -> Result<Vec<PullRequest>> {
-    let fields = "number,title,author,headRefName,additions,deletions,headRefOid";
+    let fields = "number,title,author,headRefName,additions,deletions,headRefOid,mergeable,statusCheckRollup";
 
     let output = Command::new("gh")
         .args([

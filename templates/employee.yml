@@ -15,6 +15,11 @@ on:
           - low
           - medium
           - high
+      mode:
+        description: 'Mode: implement (default) or heal (rebase/fix conflicts)'
+        required: false
+        type: string
+        default: 'implement'
 
 concurrency:
   group: terrarium-employee-issue-${{ inputs.issue_number }}
@@ -51,6 +56,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           TERRARIUM_ISSUE: ${{ inputs.issue_number }}
           TERRARIUM_COMPLEXITY: ${{ inputs.complexity }}
+          TERRARIUM_MODE: ${{ inputs.mode }}
           TERRARIUM_MODEL_LOW: ${{ vars.TERRARIUM_MODEL_LOW }}
           TERRARIUM_MODEL_MEDIUM: ${{ vars.TERRARIUM_MODEL_MEDIUM }}
           TERRARIUM_MODEL_HIGH: ${{ vars.TERRARIUM_MODEL_HIGH }}

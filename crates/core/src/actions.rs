@@ -49,6 +49,9 @@ pub enum Action {
     Journal {
         body: String,
     },
+    HealBranch {
+        pr_number: u64,
+    },
 }
 
 /// The result of executing a single action.
@@ -271,6 +274,16 @@ async fn execute_one(action: &Action) -> ActionResult {
                 format!("journal entry recorded: {}", truncate(body, 80)),
             )
         }
+
+        Action::HealBranch { pr_number } => {
+            match dispatch_heal_workflow(*pr_number).await {
+                Ok(()) => ActionResult::ok(
+                    "heal_branch",
+                    format!("dispatched heal for PR #{pr_number}"),
+                ),
+                Err(e) => ActionResult::err("heal_branch", format!("{e:#}")),
+            }
+        }
     }
 }
 
@@ -293,6 +306,54 @@ async fn dispatch_employee_workflow(issue_number: u64, complexity: &str) -> Resu
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("gh workflow run failed: {stderr}");
+    }
+
+    Ok(())
+}
+
+/// Dispatch the employee workflow in heal mode to rebase and fix conflicts on a PR.
+///
+/// Looks up the PR to find the linked issue number (from the branch name
+/// `terrarium/issue-{N}`), then dispatches the employee with `mode=heal`.
+async fn dispatch_heal_workflow(pr_number: u64) -> Result<()> {
+    // Get the PR's head branch to extract the issue number.
+    let pr_str = pr_number.to_string();
+    let output = Command::new("gh")
+        .args(["pr", "view", &pr_str, "--json", "headRefName", "-q", ".headRefName"])
+        .output()
+        .await
+        .context("failed to get PR branch")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("gh pr view failed: {stderr}");
+    }
+
+    let branch = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let issue_number = branch
+        .strip_prefix("terrarium/issue-")
+        .and_then(|s| s.parse::<u64>().ok())
+        .with_context(|| format!("PR #{pr_number} branch '{branch}' is not a terrarium branch"))?;
+
+    let output = Command::new("gh")
+        .args([
+            "workflow",
+            "run",
+            "employee.yml",
+            "--field",
+            &format!("issue_number={issue_number}"),
+            "--field",
+            "complexity=medium",
+            "--field",
+            "mode=heal",
+        ])
+        .output()
+        .await
+        .context("failed to spawn gh workflow run for heal")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("gh workflow run (heal) failed: {stderr}");
     }
 
     Ok(())
@@ -393,10 +454,11 @@ mod tests {
             { "action": "top_up", "amount_usd": 10.0 },
             { "action": "close_milestone", "milestone": "v0.1" },
             { "action": "stakeholder_update", "body": "shipped v0.1" },
-            { "action": "journal", "body": "cycle 42 complete" }
+            { "action": "journal", "body": "cycle 42 complete" },
+            { "action": "heal_branch", "pr_number": 35 }
         ]"#;
         let actions = parse_actions(json).unwrap();
-        assert_eq!(actions.len(), 11);
+        assert_eq!(actions.len(), 12);
     }
 
     #[test]

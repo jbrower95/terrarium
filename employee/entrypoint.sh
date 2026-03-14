@@ -4,6 +4,7 @@ set -euo pipefail
 # ── Input validation ─────────────────────────────────────────────────
 ISSUE="${TERRARIUM_ISSUE:?TERRARIUM_ISSUE is required}"
 COMPLEXITY="${TERRARIUM_COMPLEXITY:-medium}"
+MODE="${TERRARIUM_MODE:-implement}"
 
 # Model resolution: env var per tier, with defaults
 DEFAULT_HIGH="moonshotai/kimi-k2.5"
@@ -88,6 +89,116 @@ else
   git checkout -b "$BRANCH"
 fi
 echo "::endgroup::"
+
+# ── Heal mode: rebase and fix conflicts ───────────────────────────────
+if [ "$MODE" = "heal" ]; then
+  echo "::group::Heal mode: rebasing $BRANCH onto default branch"
+  DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|origin/||' || echo "main")
+
+  # Attempt a clean rebase first.
+  set +e
+  git rebase "origin/${DEFAULT_BRANCH}" 2>/tmp/rebase-stderr.log
+  REBASE_EXIT=$?
+  set -e
+
+  if [ $REBASE_EXIT -eq 0 ]; then
+    echo "Clean rebase succeeded"
+    git push --force-with-lease
+    emit_artifact "{\"type\":\"healed\",\"issue\":${ISSUE},\"method\":\"rebase\"}"
+    echo "::endgroup::"
+    exit 0
+  fi
+
+  echo "Rebase has conflicts, using opencode to resolve..."
+  git rebase --abort 2>/dev/null || true
+
+  # Use opencode to resolve the merge: merge main into the branch and fix conflicts.
+  cat > opencode.json << 'OCCONF'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "openrouter": {
+      "options": {
+        "apiKey": "{env:OPENROUTER_API_KEY}"
+      }
+    }
+  },
+  "permission": "allow"
+}
+OCCONF
+
+  # Merge instead of rebase — leaves conflict markers in files for opencode to fix.
+  set +e
+  git merge "origin/${DEFAULT_BRANCH}" --no-edit 2>/tmp/merge-stderr.log
+  MERGE_EXIT=$?
+  set -e
+
+  if [ $MERGE_EXIT -eq 0 ]; then
+    echo "Clean merge succeeded"
+    git push --force-with-lease
+    rm -f opencode.json
+    rm -rf .opencode/
+    emit_artifact "{\"type\":\"healed\",\"issue\":${ISSUE},\"method\":\"merge\"}"
+    echo "::endgroup::"
+    exit 0
+  fi
+
+  # Get the list of conflicted files.
+  CONFLICTED_FILES=$(git diff --name-only --diff-filter=U)
+  echo "Conflicted files:"
+  echo "$CONFLICTED_FILES"
+
+  HEAL_PROMPT="You are resolving merge conflicts on branch ${BRANCH}.
+
+The branch was merging origin/${DEFAULT_BRANCH} but hit conflicts in these files:
+${CONFLICTED_FILES}
+
+Each file has standard git conflict markers (<<<<<<< HEAD, =======, >>>>>>>).
+
+## Instructions
+- Open each conflicted file and resolve the conflicts by keeping the correct combination of both sides.
+- The branch's changes implement issue #${ISSUE}. Preserve the intent of both sides.
+- After resolving, make sure the code compiles and is correct.
+- Do NOT add new features or refactor — only resolve the conflicts.
+- Mark each file as resolved with 'git add <file>' after fixing it."
+
+  set +e
+  opencode run --format json -m "openrouter/${MODEL}" "$HEAL_PROMPT" > /tmp/opencode-output.json 2>/tmp/opencode-stderr.log
+  OPENCODE_EXIT=$?
+  set -e
+  echo "::endgroup::"
+
+  # Parse token/cost data from heal.
+  INPUT_TOKENS=$(grep step_finish /tmp/opencode-output.json | jq -s 'map(.part.tokens.input // 0) | add // 0' 2>/dev/null || echo 0)
+  OUTPUT_TOKENS=$(grep step_finish /tmp/opencode-output.json | jq -s 'map(.part.tokens.output // 0) | add // 0' 2>/dev/null || echo 0)
+  COST_USD=$(grep step_finish /tmp/opencode-output.json | jq -s 'map(.part.cost // 0) | add // 0' 2>/dev/null || echo 0)
+
+  rm -f opencode.json
+  rm -rf .opencode/
+
+  if [ $OPENCODE_EXIT -ne 0 ]; then
+    echo "opencode failed to resolve conflicts"
+    git merge --abort 2>/dev/null || true
+    emit_error "heal: opencode failed to resolve conflicts (exit ${OPENCODE_EXIT})"
+    exit 0
+  fi
+
+  # Check if conflicts are resolved.
+  REMAINING=$(git diff --name-only --diff-filter=U 2>/dev/null || echo "")
+  if [ -n "$REMAINING" ]; then
+    echo "Unresolved conflicts remain: $REMAINING"
+    git merge --abort 2>/dev/null || true
+    emit_stuck "heal: unresolved conflicts remain in: ${REMAINING}"
+    exit 0
+  fi
+
+  # Commit and push the merge resolution.
+  git add -A -- ':!opencode.json' ':!.opencode/' ':!employee-output.log' ':!artifact.json'
+  git commit -m "terrarium: heal merge conflicts for #${ISSUE}" || true
+  git push
+  emit_artifact "{\"type\":\"healed\",\"issue\":${ISSUE},\"method\":\"merge_resolved\",\"cost_usd\":${COST_USD}}"
+  exit 0
+fi
 
 # ── Phase 4: Generate opencode config ────────────────────────────────
 # Write config; model is passed via -m flag, not in config

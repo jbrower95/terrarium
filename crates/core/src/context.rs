@@ -147,9 +147,22 @@ pub fn materialize_owner_context(ctx: &OwnerContext) -> String {
         out.push_str("(No open PRs.)\n");
     }
     for pr in &ctx.open_prs {
+        let mut health = String::new();
+        if pr.mergeable == "CONFLICTING" {
+            health.push_str(" !! CONFLICTS");
+        }
+        if pr.ci_status == "FAILURE" {
+            health.push_str(" !! CI FAILING");
+        } else if pr.ci_status == "PENDING" {
+            health.push_str(" [ci pending]");
+        }
+        let is_terrarium = pr.head_ref.starts_with("terrarium/");
+        if is_terrarium && pr.mergeable == "CONFLICTING" {
+            health.push_str(" → use heal_branch");
+        }
         out.push_str(&format!(
-            "- #{}: {} (by {}, {})\n",
-            pr.number, pr.title, pr.author, pr.diff_stats
+            "- #{}: {} (by {}, {}{})\n",
+            pr.number, pr.title, pr.author, pr.diff_stats, health
         ));
     }
     out.push('\n');
@@ -202,9 +215,12 @@ const ACTION_VOCABULARY: &str = r#"```json
   { "action": "top_up", "amount_usd": 10 },
   { "action": "close_milestone", "milestone": "v0.1" },
   { "action": "stakeholder_update", "body": "..." },
-  { "action": "journal", "body": "..." }
+  { "action": "journal", "body": "..." },
+  { "action": "heal_branch", "pr_number": 35 }
 ]
-```"#;
+```
+
+**heal_branch**: Use this to rebase and fix merge conflicts on terrarium-created PRs that show `!! CONFLICTS`. Only use on PRs with branches starting with `terrarium/`."#;
 
 #[cfg(test)]
 mod tests {
@@ -278,9 +294,11 @@ mod tests {
                 number: 18,
                 title: "Add budget module".into(),
                 author: "employee-bot".into(),
-                head_ref: "issue-5-budget".into(),
+                head_ref: "terrarium/issue-5".into(),
                 diff_stats: "+120 -30".into(),
                 head_sha: "abc123".into(),
+                mergeable: "MERGEABLE".into(),
+                ci_status: "SUCCESS".into(),
             }],
             journal_context: "## 2026-03-13 14:30:00 UTC\n- Balance: $50.00\nMerged PR #17.\n"
                 .into(),
