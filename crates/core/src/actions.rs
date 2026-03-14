@@ -100,12 +100,27 @@ pub fn parse_actions(json: &str) -> Result<Vec<Action>> {
         return Ok(wrapper.actions);
     }
 
+    // Try parsing as a single action object (model sometimes returns one instead of an array).
+    if let Ok(action) = serde_json::from_str::<Action>(trimmed) {
+        return Ok(vec![action]);
+    }
+
     // Try extracting a JSON array from within markdown code fences.
     if let Some(start) = trimmed.find('[') {
         if let Some(end) = trimmed.rfind(']') {
             let slice = &trimmed[start..=end];
             if let Ok(actions) = serde_json::from_str::<Vec<Action>>(slice) {
                 return Ok(actions);
+            }
+        }
+    }
+
+    // Try extracting a single object from within markdown code fences.
+    if let Some(start) = trimmed.find('{') {
+        if let Some(end) = trimmed.rfind('}') {
+            let slice = &trimmed[start..=end];
+            if let Ok(action) = serde_json::from_str::<Action>(slice) {
+                return Ok(vec![action]);
             }
         }
     }
@@ -382,6 +397,24 @@ mod tests {
         ]"#;
         let actions = parse_actions(json).unwrap();
         assert_eq!(actions.len(), 11);
+    }
+
+    #[test]
+    fn parse_single_object() {
+        let json = r#"{ "action": "merge_pr", "pr_number": 35 }"#;
+        let actions = parse_actions(json).unwrap();
+        assert_eq!(actions.len(), 1);
+        match &actions[0] {
+            Action::MergePr { pr_number } => assert_eq!(*pr_number, 35),
+            other => panic!("expected MergePr, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_single_object_in_code_fence() {
+        let json = "```json\n{ \"action\": \"merge_pr\", \"pr_number\": 10 }\n```";
+        let actions = parse_actions(json).unwrap();
+        assert_eq!(actions.len(), 1);
     }
 
     #[test]

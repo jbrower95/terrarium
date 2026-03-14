@@ -64,5 +64,16 @@ jobs:
       - name: Push changes
         run: |
           git add JOURNAL.md README.md .github/workflows/ || true
-          git diff --cached --quiet || git commit -m "terrarium: owner cycle $(date -u +%Y-%m-%dT%H:%M:%S)"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "terrarium: owner cycle $(date -u +%Y-%m-%dT%H:%M:%S)"
+          # Try pushing directly; if branch protection blocks it, push via a PR
+          if ! git push 2>/dev/null; then
+            BRANCH="terrarium/journal-$(date -u +%Y%m%d%H%M%S)"
+            git checkout -b "$BRANCH"
+            git push -u origin "$BRANCH"
+            gh pr create --title "terrarium: owner cycle update" --body "Automated journal and status update." --head "$BRANCH" || true
+            gh pr merge "$BRANCH" --merge --auto || true
+          fi
