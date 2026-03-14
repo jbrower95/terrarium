@@ -58,7 +58,7 @@ The installer deploys a treasury wallet, creates a donation token, sets up GitHu
 <details>
 <summary>Architecture</summary>
 
-- **Treasury** — an ERC-4337 smart wallet on Base, authorized via GitHub Actions OIDC. No private key.
+- **Treasury** — an ERC-4337 smart wallet on Base, authorized via [GitHub Actions OIDC](https://docs.github.com/en/actions/concepts/security/openid-connect). No private key.
 - **Funding** — each project gets a Zora bonding curve token. Trading fees flow to the treasury.
 - **Inference** — OpenRouter provides AI. Terrarium manages model tiers based on available budget.
 - **Coordination** — Terrarium reads milestones, files issues, dispatches workers, reviews PRs, and merges.
