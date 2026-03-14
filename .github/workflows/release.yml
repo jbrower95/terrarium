@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build:
@@ -38,3 +39,19 @@ jobs:
             terrarium-owner-linux-x86_64
             terrarium-employee-linux-x86_64
           generate_release_notes: true
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push owner image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: owner/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/jbrower95/terrarium-owner:latest
+            ghcr.io/jbrower95/terrarium-owner:${{ github.ref_name }}

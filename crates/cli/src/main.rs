@@ -149,28 +149,222 @@ fn is_interactive() -> bool {
     }
 }
 
-/// Step 1: Wallet setup
-async fn step_wallet(wallet_flag: Option<&str>) -> Result<String> {
+/// The Coinbase Commerce contract on Base — whitelisted for top-ups.
+const COINBASE_COMMERCE_CONTRACT: &str = "0x03059433BCdB6144624cC2443159D9445C32b7a8";
+
+/// Default max daily spend: ~$100 at $2000/ETH = 0.05 ETH.
+const DEFAULT_MAX_DAILY_SPEND_WEI: &str = "50000000000000000"; // 0.05 ETH
+
+/// GitHub Actions OIDC JWKS endpoint.
+const GITHUB_OIDC_JWKS_URI: &str = "https://token.actions.githubusercontent.com/.well-known/jwks";
+
+/// Fetch the first RSA key from GitHub's OIDC JWKS endpoint.
+/// Returns (kid, modulus_hex, exponent_hex).
+async fn fetch_github_jwks() -> Result<(String, String, String)> {
+    let client = reqwest::Client::new();
+    let resp: serde_json::Value = client
+        .get(GITHUB_OIDC_JWKS_URI)
+        .send()
+        .await
+        .context("failed to fetch GitHub JWKS")?
+        .json()
+        .await
+        .context("failed to parse JWKS response")?;
+
+    let keys = resp.get("keys")
+        .and_then(|k| k.as_array())
+        .context("JWKS response missing keys array")?;
+
+    let rsa_key = keys.iter()
+        .find(|k| k.get("kty").and_then(|v| v.as_str()) == Some("RSA"))
+        .context("no RSA key found in JWKS")?;
+
+    let kid = rsa_key.get("kid")
+        .and_then(|v| v.as_str())
+        .context("RSA key missing kid")?
+        .to_string();
+
+    let n_b64 = rsa_key.get("n")
+        .and_then(|v| v.as_str())
+        .context("RSA key missing modulus (n)")?;
+
+    let e_b64 = rsa_key.get("e")
+        .and_then(|v| v.as_str())
+        .context("RSA key missing exponent (e)")?;
+
+    use base64::Engine;
+    let engine = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
+    let n_bytes = engine.decode(n_b64).context("failed to decode modulus")?;
+    let e_bytes = engine.decode(e_b64).context("failed to decode exponent")?;
+
+    let n_hex = format!("0x{}", hex::encode(&n_bytes));
+    let e_hex = format!("0x{}", hex::encode(&e_bytes));
+
+    Ok((kid, n_hex, e_hex))
+}
+
+/// Deploy the Terrarium wallet stack via `forge script`.
+/// Returns the deployed wallet address.
+async fn deploy_wallet(
+    repo_owner: &str,
+    repo_name: &str,
+    deployer_key: &str,
+    rpc_url: &str,
+) -> Result<String> {
+    eprintln!("  Fetching GitHub OIDC keys...");
+    let (kid, modulus, exponent) = fetch_github_jwks().await?;
+    eprintln!("  \u{2713} JWKS kid: {kid}");
+
+    // Find the contracts directory relative to the terrarium package.
+    // When installed via npx, the contracts dir is bundled alongside the binary.
+    // For now, we look for it relative to the binary or in a well-known location.
+    let contracts_dir = find_contracts_dir()?;
+
+    eprintln!("  Deploying contracts to Base...");
+    let output = Command::new("forge")
+        .args([
+            "script",
+            "script/DeployWallet.s.sol",
+            "--rpc-url", rpc_url,
+            "--broadcast",
+        ])
+        .env("REPO_OWNER", repo_owner)
+        .env("REPO_NAME", repo_name)
+        .env("MAX_DAILY_SPEND", DEFAULT_MAX_DAILY_SPEND_WEI)
+        .env("ALLOWED_DESTINATIONS", COINBASE_COMMERCE_CONTRACT)
+        .env("INITIAL_KID", &kid)
+        .env("INITIAL_MODULUS", &modulus)
+        .env("INITIAL_EXPONENT", &exponent)
+        .env("PRIVATE_KEY", deployer_key)
+        .current_dir(&contracts_dir)
+        .output()
+        .await
+        .context("failed to run forge script — is Foundry installed?")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        anyhow::bail!("forge script failed:\n{stderr}\n{stdout}");
+    }
+
+    // Parse the wallet address from forge output.
+    // The script logs: "TerrariumWallet: 0x..."
+    let wallet_addr = stdout.lines()
+        .chain(stderr.lines())
+        .find_map(|line| {
+            if line.contains("TerrariumWallet:") {
+                line.split_whitespace().last().map(|s| s.to_string())
+            } else {
+                None
+            }
+        })
+        .context("could not find TerrariumWallet address in forge output")?;
+
+    Ok(wallet_addr)
+}
+
+/// Locate the contracts directory. Checks:
+/// 1. Relative to the current binary (for installed packages)
+/// 2. Relative to cwd (for development)
+fn find_contracts_dir() -> Result<std::path::PathBuf> {
+    // Check relative to the binary
+    if let Ok(exe) = std::env::current_exe() {
+        let bin_contracts = exe.parent()
+            .map(|p| p.join("../contracts"))
+            .and_then(|p| p.canonicalize().ok());
+        if let Some(p) = bin_contracts {
+            if p.join("foundry.toml").exists() {
+                return Ok(p);
+            }
+        }
+    }
+
+    // Check relative to cwd
+    let cwd = std::env::current_dir()?;
+    for dir in &["contracts", "../contracts"] {
+        let p = cwd.join(dir);
+        if p.join("foundry.toml").exists() {
+            return Ok(p.canonicalize()?);
+        }
+    }
+
+    // Check TERRARIUM_CONTRACTS_DIR env var
+    if let Ok(dir) = std::env::var("TERRARIUM_CONTRACTS_DIR") {
+        let p = std::path::PathBuf::from(&dir);
+        if p.join("foundry.toml").exists() {
+            return Ok(p);
+        }
+    }
+
+    anyhow::bail!(
+        "could not find contracts directory (with foundry.toml). \
+         Set TERRARIUM_CONTRACTS_DIR or run from the terrarium repo root."
+    )
+}
+
+/// Step 1: Wallet setup — deploy or provide an existing address.
+async fn step_wallet(wallet_flag: Option<&str>, repo: &str) -> Result<String> {
     eprintln!();
     eprintln!("  Step 1: Wallet");
 
-    eprintln!("  \u{26a0} Wallet deployment requires Base RPC + funded deployer. Skipping in dev mode.");
+    // If a wallet address was provided via flag, use it directly.
+    if let Some(w) = wallet_flag {
+        eprintln!("  \u{2713} Wallet: {w}");
+        return Ok(w.to_string());
+    }
 
-    let wallet = if let Some(w) = wallet_flag {
-        w.to_string()
-    } else if is_interactive() {
-        let input = prompt("  Wallet address (or press Enter for placeholder): ")?;
-        if input.is_empty() {
-            "0x0000000000000000000000000000000000000000".to_string()
-        } else {
-            input
+    if !is_interactive() {
+        eprintln!("  \u{26a0} Non-interactive mode: skipping wallet deploy");
+        let addr = "0x0000000000000000000000000000000000000000";
+        eprintln!("  \u{2713} Wallet: {addr} (placeholder)");
+        return Ok(addr.to_string());
+    }
+
+    let choice = prompt("  Deploy a new wallet? [Y/n/address]: ")?;
+
+    // If they pasted an address, use it.
+    if choice.starts_with("0x") && choice.len() >= 42 {
+        eprintln!("  \u{2713} Wallet: {choice}");
+        return Ok(choice);
+    }
+
+    // If they said no, ask for an address.
+    if choice.eq_ignore_ascii_case("n") || choice.eq_ignore_ascii_case("no") {
+        let addr = prompt("  Wallet address: ")?;
+        if addr.is_empty() {
+            anyhow::bail!("wallet address is required");
         }
+        eprintln!("  \u{2713} Wallet: {addr}");
+        return Ok(addr);
+    }
+
+    // Deploy a new wallet.
+    let deployer_key = if let Ok(key) = env::var("DEPLOYER_PRIVATE_KEY") {
+        eprintln!("  (using DEPLOYER_PRIVATE_KEY from environment)");
+        key
     } else {
-        eprintln!("  (non-interactive: using placeholder)");
-        "0x0000000000000000000000000000000000000000".to_string()
+        prompt_secret("  Deployer private key (hex): ")?
     };
 
-    eprintln!("  \u{2713} Wallet: {wallet}");
+    if deployer_key.is_empty() {
+        anyhow::bail!("deployer private key is required for wallet deployment");
+    }
+
+    let rpc_url = env::var("BASE_RPC_URL")
+        .unwrap_or_else(|_| "https://mainnet.base.org".to_string());
+
+    let parts: Vec<&str> = repo.splitn(2, '/').collect();
+    let (repo_owner, repo_name) = if parts.len() == 2 {
+        (parts[0], parts[1])
+    } else {
+        anyhow::bail!("invalid repo format: {repo}");
+    };
+
+    let wallet = deploy_wallet(repo_owner, repo_name, &deployer_key, &rpc_url).await?;
+
+    eprintln!("  \u{2713} Wallet deployed: {wallet}");
     Ok(wallet)
 }
 
@@ -373,6 +567,8 @@ fn step_workflow() -> Result<()> {
     let workflow_content = r#"# .github/workflows/terrarium.yml
 name: Terrarium
 on:
+  push:
+    branches: [main, master]
   schedule:
     - cron: '*/30 * * * *'
   workflow_dispatch: {}
@@ -446,7 +642,7 @@ async fn main() -> anyhow::Result<()> {
         };
 
         // Step 1: Wallet
-        let wallet = step_wallet(cli.wallet.as_deref()).await?;
+        let wallet = step_wallet(cli.wallet.as_deref(), &repo).await?;
 
         // Step 2: Token
         let token_addr = step_token(cli.token.as_deref()).await?;

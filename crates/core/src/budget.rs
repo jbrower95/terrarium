@@ -15,9 +15,13 @@ const DEFAULT_BASE_RPC: &str = "https://mainnet.base.org";
 const OPENROUTER_AUTH_KEY_URL: &str = "https://openrouter.ai/api/v1/auth/key";
 const OPENROUTER_COINBASE_URL: &str = "https://openrouter.ai/api/v1/credits/coinbase";
 
-/// Rough ETH/USD price used when a live feed is unavailable.
-/// Good enough for runway estimates; replace with an oracle later.
-const FALLBACK_ETH_USD: f64 = 3_000.0;
+/// Uniswap V3 WETH/USDC pool on Base (0.05% fee tier).
+/// token0 = WETH (0x4200...0006), token1 = USDC (0x8335...2913)
+const UNISWAP_WETH_USDC_POOL: &str = "0xd0b53D9277642d899DF5C87A3966A349A798F224";
+
+/// Reasonable sanity bounds for ETH price.
+const ETH_PRICE_MIN: f64 = 100.0;
+const ETH_PRICE_MAX: f64 = 100_000.0;
 
 // ── JSON-RPC helpers ───────────────────────────────────────────────────
 
@@ -112,6 +116,55 @@ pub struct TopUpCalldata {
 
 // ── Public API ─────────────────────────────────────────────────────────
 
+/// Query the Uniswap V3 WETH/USDC pool on Base for the current ETH price.
+///
+/// Calls `slot0()` on the pool contract and computes the price from `sqrtPriceX96`.
+/// Returns an error if the price cannot be fetched — there is no hardcoded fallback.
+pub async fn get_eth_price_usd(rpc_url: &str) -> Result<f64> {
+    let rpc = if rpc_url.is_empty() { DEFAULT_BASE_RPC } else { rpc_url };
+
+    // slot0() selector: 0x3850c7bd
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [{"to": UNISWAP_WETH_USDC_POOL, "data": "0x3850c7bd"}, "latest"],
+    });
+
+    let client = reqwest::Client::new();
+    let res = client.post(rpc).json(&body).send().await
+        .context("slot0 RPC call failed")?;
+
+    let rpc_res: JsonRpcResponse = res.json().await
+        .context("failed to parse slot0 response")?;
+
+    if let Some(err) = rpc_res.error {
+        anyhow::bail!("slot0 RPC error: {err}");
+    }
+
+    let hex = rpc_res.result.context("slot0 returned null")?;
+    let clean = hex.strip_prefix("0x").unwrap_or(&hex);
+    if clean.len() < 64 {
+        anyhow::bail!("slot0 response too short");
+    }
+
+    // First 32 bytes = sqrtPriceX96 (uint160, but returned as uint256)
+    let sqrt_hex = &clean[..64];
+    let sqrt_price = u128::from_str_radix(sqrt_hex.trim_start_matches('0'), 16)
+        .context("failed to parse sqrtPriceX96")?;
+
+    // token0 = WETH (18 decimals), token1 = USDC (6 decimals)
+    // price (USDC per ETH) = (sqrtPriceX96 / 2^96)^2 * 10^(18-6)
+    let ratio = sqrt_price as f64 / (2.0_f64.powi(96));
+    let price = ratio * ratio * 1e12;
+
+    if price < ETH_PRICE_MIN || price > ETH_PRICE_MAX {
+        anyhow::bail!("ETH price ${price:.2} outside sanity bounds [${ETH_PRICE_MIN}–${ETH_PRICE_MAX}]");
+    }
+
+    Ok(price)
+}
+
 /// Fetch the ETH balance of `wallet` via an `eth_getBalance` JSON-RPC call.
 ///
 /// `rpc_url` defaults to Base mainnet (`https://mainnet.base.org`) when an
@@ -155,7 +208,9 @@ pub async fn get_wallet_balance(wallet: &str, rpc_url: &str) -> Result<Balance> 
         .context("failed to parse balance hex")?;
 
     let eth = wei as f64 / 1e18;
-    let usd = eth * FALLBACK_ETH_USD;
+    let eth_price = get_eth_price_usd(rpc).await
+        .context("failed to fetch live ETH price for balance conversion")?;
+    let usd = eth * eth_price;
 
     Ok(Balance { eth, usd })
 }
@@ -273,10 +328,22 @@ pub async fn build_topup_calldata(
         500, // poolFeesTier — lowest tier, recommended for ETH
     )?;
 
-    // ETH value: recipient_amount + fee_amount + 10% buffer for swap slippage.
-    // Excess is refunded to sender by the contract.
-    let total = recipient_amount + fee_amount;
-    let value = total + total / 10;
+    // Convert USDC total (6 decimals) to the ETH value we need to send.
+    // 1. Sum USDC amounts: recipient_amount + fee_amount (both in USDC with 6 decimals)
+    // 2. Convert to USD: total_usdc / 1e6
+    // 3. Convert USD to ETH: usd / eth_price
+    // 4. Convert ETH to wei: eth * 1e18
+    // 5. Add 10% slippage buffer (excess is refunded by the contract)
+    let rpc_url = std::env::var("BASE_RPC_URL")
+        .unwrap_or_else(|_| DEFAULT_BASE_RPC.to_string());
+    let eth_price = get_eth_price_usd(&rpc_url).await
+        .context("need live ETH price to compute top-up value")?;
+
+    let total_usdc = recipient_amount + fee_amount;
+    let total_usd = total_usdc as f64 / 1e6;
+    let eth_needed = total_usd / eth_price;
+    let wei_needed = (eth_needed * 1e18) as u128;
+    let value = wei_needed + wei_needed / 10; // +10% slippage buffer
 
     Ok(TopUpCalldata {
         to: contract_address,

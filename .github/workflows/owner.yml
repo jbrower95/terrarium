@@ -20,6 +20,8 @@ permissions:
 jobs:
   owner:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jbrower95/terrarium-owner:latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,12 +31,6 @@ jobs:
         run: |
           git config user.name "terrarium[bot]"
           git config user.email "terrarium[bot]@users.noreply.github.com"
-
-      - name: Download terrarium-owner
-        run: |
-          RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-owner-linux-x86_64"
-          curl -sL "$RELEASE_URL" -o terrarium-owner
-          chmod +x terrarium-owner
 
       - name: Run owner cycle
         env:
@@ -50,7 +46,7 @@ jobs:
           TERRARIUM_TOKEN: ${{ vars.TERRARIUM_TOKEN }}
           BASE_RPC_URL: ${{ vars.BASE_RPC_URL }}
         run: |
-          ./terrarium-owner 2>&1 | tee owner-output.log
+          terrarium-owner 2>&1 | tee owner-output.log
           # Extract artifact JSON (last line of stdout)
           tail -1 owner-output.log > artifact.json
 

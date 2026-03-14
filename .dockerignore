@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+employee/
+contracts/
+templates/
+node_modules/
+*.md
+LICENSE
+package-lock.json
