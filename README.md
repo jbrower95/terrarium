@@ -16,10 +16,10 @@ Fund an open source project. Terrarium manages the budget, files issues, writes 
 
 ```mermaid
 graph LR
-    A["Supporters<br/>fund project"] --> B["On-chain<br/>treasury"]
+    A["Supporters<br/>fund project"] --> B["Onchain<br/>treasury"]
     B --> C["Terrarium<br/>builds"]
     C --> D["Project<br/>ships"]
-    D -->|"better project → more supporters"| A
+    D --> A
 
     style A fill:#2d333b,stroke:#58a6ff,color:#e6edf3
     style B fill:#2d333b,stroke:#58a6ff,color:#e6edf3
