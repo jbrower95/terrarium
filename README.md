@@ -19,10 +19,10 @@ graph LR
     A["Project launches<br/>donation token"] --> B["Supporters buy<br/>$PROJECT on Zora"]
     B --> C["Trading fees flow<br/>to treasury"]
     C --> D["OIDC-gated<br/>smart wallet"]
-    D --> E["Owner tops up<br/>OpenRouter credits"]
-    E --> F["Owner files issues<br/>from milestones"]
-    F --> G["Employees write code<br/>& open PRs"]
-    G --> H["Owner reviews<br/>& merges"]
+    D --> E["Terrarium tops up<br/>OpenRouter credits"]
+    E --> F["Terrarium files issues<br/>from milestones"]
+    F --> G["Terrarium Workers<br/>write code & open PRs"]
+    G --> H["Terrarium reviews<br/>& merges"]
     H --> I["Project ships<br/>features"]
     I -->|"better project → more supporters"| B
 
