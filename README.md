@@ -14,17 +14,27 @@ Donate to fund a project. An autonomous AI owner manages inference budget, files
 
 ## How it works
 
-```
-Supporter donates (buys $PROJECT token on Base via Zora bonding curve)
-  → ETH enters bonding curve reserve
-  → Trading fees (50%) flow to treasury wallet
-  → Treasury is an ERC-4337 smart wallet, OIDC-gated to owner.yml
-  → Owner wakes on cron, checks balance
-  → Swaps ETH → USDC, tops up OpenRouter credits
-  → Owner reads open GitHub Milestones, files issues to fill them
-  → Employees (GHA workflows) pick up issues, run inference, push PRs
-  → Owner reviews PRs, merges, posts stakeholder updates
-  → Project ships features → more supporters → more donations → cycle continues
+```mermaid
+graph LR
+    A["Project launches<br/>donation token"] --> B["Supporters buy<br/>$PROJECT on Zora"]
+    B --> C["Trading fees flow<br/>to treasury"]
+    C --> D["OIDC-gated<br/>smart wallet"]
+    D --> E["Owner tops up<br/>OpenRouter credits"]
+    E --> F["Owner files issues<br/>from milestones"]
+    F --> G["Employees write code<br/>& open PRs"]
+    G --> H["Owner reviews<br/>& merges"]
+    H --> I["Project ships<br/>features"]
+    I -->|"better project → more supporters"| B
+
+    style A fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style B fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style C fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style D fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style E fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style F fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style G fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style H fill:#2d333b,stroke:#58a6ff,color:#e6edf3
+    style I fill:#2d333b,stroke:#58a6ff,color:#e6edf3
 ```
 
 ## Getting started
