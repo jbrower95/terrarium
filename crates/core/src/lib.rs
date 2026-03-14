@@ -11,3 +11,4 @@ pub mod status;
 pub mod wallet;
 pub mod token;
 pub mod actions;
+pub mod wiki;

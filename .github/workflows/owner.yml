@@ -6,6 +6,10 @@ on:
       OPENROUTER_API_KEY:
         required: true
 
+concurrency:
+  group: terrarium-owner-${{ github.repository }}
+  cancel-in-progress: false
+
 permissions:
   id-token: write
   contents: write

@@ -5,7 +5,7 @@
 <h1 align="center">terrarium</h1>
 
 <p align="center">
-  A self-running open source project framework.
+  <strong>Autonomous open source, powered by <a href="https://www.x402.org/">x402</a> + GitHub + <a href="https://openrouter.ai/">OpenRouter</a></strong>
 </p>
 
 ---
@@ -95,3 +95,7 @@ terrarium/
 ## License
 
 MIT
+
+---
+
+*Terrarium is an independent project and is not affiliated with, endorsed by, or formally associated with x402, GitHub, OpenRouter, Zora, or any other referenced projects or services.*

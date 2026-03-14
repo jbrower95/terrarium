@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 
-use crate::{milestones, pr, tasks};
+use crate::{milestones, pr, tasks, wiki};
 
 /// A single action the owner can take during a cycle.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,13 +230,13 @@ async fn execute_one(action: &Action) -> ActionResult {
         }
 
         Action::StakeholderUpdate { body } => {
-            // Post a stakeholder update as a repo discussion or issue comment.
-            // For now, create a special issue labeled "stakeholder-update".
-            let labels: Vec<&str> = vec!["stakeholder-update"];
-            match tasks::create_issue("Stakeholder Update", body, &labels, None).await {
-                Ok(num) => ActionResult::ok(
+            // Write stakeholder update to the repo wiki.
+            let repo_slug = std::env::var("GITHUB_REPOSITORY")
+                .unwrap_or_else(|_| "unknown/unknown".into());
+            match wiki::update_wiki_page(&repo_slug, "Stakeholder-Update", body).await {
+                Ok(()) => ActionResult::ok(
                     "stakeholder_update",
-                    format!("posted stakeholder update as issue #{num}"),
+                    "posted stakeholder update to wiki",
                 ),
                 Err(e) => ActionResult::err("stakeholder_update", format!("{e:#}")),
             }

@@ -17,6 +17,7 @@ use terrarium_core::{
     spend,
     status::{self, StatusData},
     tasks,
+    wiki,
 };
 
 // ── Run artifact output ──────────────────────────────────────────────
@@ -126,6 +127,37 @@ async fn run() -> Result<()> {
             vec![]
         }
     };
+
+    // ── Step 6b: Early exit on scheduled runs with nothing to do ─────
+    // On cron, skip inference if every milestone is complete and has tasks.
+    // Push/manual triggers always run so the owner can react to new code.
+    let event_name = env::var("GITHUB_EVENT_NAME").unwrap_or_default();
+    if event_name == "schedule" {
+        let has_work = milestones_with_issues.iter().any(|(ms, issues)| {
+            let total = ms.open_issues + ms.closed_issues;
+            // Needs work if: has open issues, or has no tasks at all (needs breakdown)
+            ms.open_issues > 0 || total == 0 || issues.is_empty()
+        });
+
+        if !has_work {
+            eprintln!("scheduled run: all milestones complete, skipping inference");
+            let artifact = RunArtifact {
+                run_id: github_run_id(),
+                role: "owner".into(),
+                issue: None,
+                model: String::new(),
+                input_tokens: 0,
+                output_tokens: 0,
+                cost_usd: 0.0,
+                result: serde_json::json!({
+                    "status": "skipped",
+                    "reason": "all milestones complete",
+                }),
+            };
+            println!("{}", serde_json::to_string(&artifact)?);
+            return Ok(());
+        }
+    }
 
     // ── Step 7: List open PRs ────────────────────────────────────────
     let open_prs = match pr::list_open_prs().await {
@@ -309,7 +341,16 @@ async fn run() -> Result<()> {
         eprintln!("warning: git commit failed: {e:#}");
     }
 
-    // ── Step 18: Upload run artifact as JSON to stdout ────────────────
+    // ── Step 18: Update wiki with milestone status pages ────────────────
+    for (ms, issues) in &owner_ctx.milestones {
+        let page_name = format!("Milestone-{}", ms.number);
+        let content = wiki::render_milestone_page(ms, issues, &open_prs);
+        if let Err(e) = wiki::update_wiki_page(&repo_slug, &page_name, &content).await {
+            eprintln!("warning: failed to update wiki page {page_name}: {e:#}");
+        }
+    }
+
+    // ── Step 19: Upload run artifact as JSON to stdout ────────────────
     let artifact = RunArtifact {
         run_id: github_run_id(),
         role: "owner".into(),

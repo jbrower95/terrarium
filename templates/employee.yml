@@ -16,6 +16,10 @@ on:
           - medium
           - high
 
+concurrency:
+  group: terrarium-employee-issue-${{ inputs.issue_number }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
   issues: write
