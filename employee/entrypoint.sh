@@ -169,7 +169,8 @@ if git diff --quiet && git diff --cached --quiet && [ -z "$(git ls-files --other
 fi
 
 echo "::group::Committing changes"
-git add -A
+# Exclude files created by the workflow wrapper
+git add -A -- ':!employee-output.log' ':!artifact.json'
 git commit -m "terrarium: implement #${ISSUE} - ${ISSUE_TITLE}"
 git push -u origin "$BRANCH"
 SHA=$(git rev-parse HEAD)
