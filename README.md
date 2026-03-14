@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="logo.png" width="200" alt="terrarium" />
+  <img src=".site/logo.png" width="200" alt="terrarium" />
 </p>
 
 <h1 align="center">terrarium</h1>
@@ -10,7 +10,7 @@
 
 ---
 
-Fund an open source project. Terrarium manages the budget, files issues, writes code, reviews PRs, and ships features — no human holds the keys.
+Fund an open source project. Terrarium manages the budget, files issues, writes code, reviews PRs, and ships features — no human holds the keys. Terrarium is fully open source and runs on GitHub Actions.
 
 ## How it works
 
