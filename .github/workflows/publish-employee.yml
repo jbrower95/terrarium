@@ -1,0 +1,32 @@
+name: Publish Employee Image
+
+on:
+  push:
+    paths:
+      - 'employee/**'
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./employee
+          push: true
+          tags: |
+            ghcr.io/jbrower95/terrarium-employee:latest
+            ghcr.io/jbrower95/terrarium-employee:${{ github.sha }}

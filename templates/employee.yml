@@ -20,10 +20,16 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  packages: read
 
 jobs:
   employee:
     runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/jbrower95/terrarium-employee:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,14 +37,9 @@ jobs:
 
       - name: Configure git identity
         run: |
-          git config user.name "terrarium[bot]"
-          git config user.email "terrarium[bot]@users.noreply.github.com"
-
-      - name: Download terrarium-employee
-        run: |
-          RELEASE_URL="https://github.com/jbrower95/terrarium/releases/latest/download/terrarium-employee-linux-x86_64"
-          curl -sL "$RELEASE_URL" -o terrarium-employee
-          chmod +x terrarium-employee
+          git config --global user.name "terrarium[bot]"
+          git config --global user.email "terrarium[bot]@users.noreply.github.com"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Run employee
         env:
@@ -51,7 +52,7 @@ jobs:
           TERRARIUM_MODEL_HIGH: ${{ vars.TERRARIUM_MODEL_HIGH }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
-          ./terrarium-employee 2>&1 | tee employee-output.log
+          /entrypoint.sh 2>&1 | tee employee-output.log
           tail -1 employee-output.log > artifact.json
 
       - name: Upload run artifact
