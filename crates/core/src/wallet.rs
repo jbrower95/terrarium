@@ -61,10 +61,57 @@ pub async fn request_oidc_token(audience: Option<&str>) -> Result<String> {
     Ok(token_resp.value)
 }
 
+/// Fetch the current nonce for a sender from the ERC-4337 EntryPoint.
+///
+/// Calls `getNonce(address,uint192)` on the EntryPoint contract.
+/// The `key` parameter is 0 for the default nonce sequence.
+pub async fn get_nonce(rpc_url: &str, entry_point: &str, sender: &str) -> Result<u64> {
+    // getNonce(address,uint192) selector: 0x35567e1a
+    let sender_clean = sender.strip_prefix("0x").unwrap_or(sender);
+    let data = format!(
+        "0x35567e1a{:0>64}{:0>64}",
+        sender_clean, "0" // key = 0
+    );
+
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "eth_call",
+        "params": [{ "to": entry_point, "data": data }, "latest"],
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(rpc_url)
+        .json(&body)
+        .send()
+        .await
+        .context("failed to fetch nonce from EntryPoint")?;
+
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .context("failed to parse nonce response")?;
+
+    if let Some(error) = json.get("error") {
+        anyhow::bail!("getNonce RPC error: {error}");
+    }
+
+    let hex = json
+        .get("result")
+        .and_then(|v| v.as_str())
+        .context("missing result in getNonce response")?;
+
+    let hex_clean = hex.trim_start_matches("0x");
+    let nonce = u64::from_str_radix(hex_clean.trim_start_matches('0'), 16).unwrap_or(0);
+
+    Ok(nonce)
+}
+
 /// ABI-encode a call to `execute(address,uint256,bytes)`.
 ///
 /// Selector: `0xb61d27f6` (keccak256 of `execute(address,uint256,bytes)`).
-fn encode_execute_calldata(to: &str, value: u64, inner_data: &[u8]) -> Vec<u8> {
+fn encode_execute_calldata(to: &str, value: u128, inner_data: &[u8]) -> Vec<u8> {
     let selector: [u8; 4] = [0xb6, 0x1d, 0x27, 0xf6];
 
     // Pad address to 32 bytes (left-pad with zeros).
@@ -76,7 +123,7 @@ fn encode_execute_calldata(to: &str, value: u64, inner_data: &[u8]) -> Vec<u8> {
 
     // Encode value as uint256 (big-endian, 32 bytes).
     let mut value_word = [0u8; 32];
-    value_word[24..].copy_from_slice(&value.to_be_bytes());
+    value_word[16..].copy_from_slice(&value.to_be_bytes());
 
     // Offset to the dynamic `bytes` parameter (3 * 32 = 96).
     let mut offset_word = [0u8; 32];
@@ -106,7 +153,7 @@ fn encode_execute_calldata(to: &str, value: u64, inner_data: &[u8]) -> Vec<u8> {
 pub async fn build_user_op(
     sender: &str,
     to: &str,
-    value: u64,
+    value: u128,
     calldata: Vec<u8>,
     jwt: &str,
     nonce: u64,
@@ -183,6 +230,61 @@ pub async fn submit_user_op(
         .to_string();
 
     Ok(hash)
+}
+
+/// Execute a full top-up: fetch calldata from OpenRouter, build a UserOp
+/// with an OIDC JWT signature, and submit it to the bundler.
+///
+/// Returns the user operation hash on success.
+pub async fn execute_topup(
+    wallet_address: &str,
+    amount_usd: f64,
+) -> Result<String> {
+    use crate::budget;
+
+    let api_key = std::env::var("OPENROUTER_API_KEY")
+        .context("OPENROUTER_API_KEY not set")?;
+
+    // 1. Get top-up calldata (destination, value, data) from OpenRouter.
+    let topup = budget::build_topup_calldata(amount_usd, wallet_address, &api_key)
+        .await
+        .context("failed to build top-up calldata")?;
+
+    // 2. Request OIDC token from GitHub Actions.
+    let jwt = request_oidc_token(None)
+        .await
+        .context("failed to request OIDC token for top-up")?;
+
+    // 3. Fetch current nonce from EntryPoint.
+    let rpc_url = std::env::var("BASE_RPC_URL")
+        .unwrap_or_else(|_| "https://mainnet.base.org".into());
+    let entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"; // v0.7
+
+    let nonce = get_nonce(&rpc_url, entry_point, wallet_address)
+        .await
+        .context("failed to fetch wallet nonce")?;
+
+    // 4. Build the UserOperation.
+    let user_op = build_user_op(
+        wallet_address,
+        &topup.to,
+        topup.value,
+        topup.data,
+        &jwt,
+        nonce,
+    )
+    .await
+    .context("failed to build user op for top-up")?;
+
+    // 5. Submit to bundler.
+    let bundler_url = std::env::var("BUNDLER_URL")
+        .unwrap_or_else(|_| "https://api.pimlico.io/v2/8453/rpc".into());
+
+    let op_hash = submit_user_op(&bundler_url, entry_point, &user_op)
+        .await
+        .context("failed to submit top-up user op")?;
+
+    Ok(op_hash)
 }
 
 #[cfg(test)]

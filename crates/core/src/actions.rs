@@ -210,13 +210,18 @@ async fn execute_one(action: &Action) -> ActionResult {
         }
 
         Action::TopUp { amount_usd } => {
-            // TODO: Implement wallet top-up via OIDC wallet transaction.
-            // This requires building calldata from budget::build_topup_calldata
-            // and signing + broadcasting via the ERC-4337 wallet module.
-            ActionResult::ok(
-                "top_up",
-                format!("top_up ${:.2} -- not yet implemented (wallet module pending)", amount_usd),
-            )
+            let wallet_address = std::env::var("TERRARIUM_WALLET")
+                .unwrap_or_default();
+            if wallet_address.is_empty() {
+                return ActionResult::err("top_up", "TERRARIUM_WALLET not set");
+            }
+            match crate::wallet::execute_topup(&wallet_address, *amount_usd).await {
+                Ok(op_hash) => ActionResult::ok(
+                    "top_up",
+                    format!("submitted ${:.2} top-up, op_hash={op_hash}", amount_usd),
+                ),
+                Err(e) => ActionResult::err("top_up", format!("{e:#}")),
+            }
         }
 
         Action::CloseMilestone { milestone } => {

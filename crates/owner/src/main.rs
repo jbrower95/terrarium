@@ -584,34 +584,13 @@ fn build_journal_body(
 
 /// Attempt an automatic top-up of OpenRouter credits via the OIDC wallet.
 async fn attempt_topup(wallet: &str, amount_usd: f64) -> Result<()> {
-    use terrarium_core::{budget, wallet as wallet_mod};
+    use terrarium_core::wallet as wallet_mod;
 
-    // Get the top-up calldata from OpenRouter.
-    let calldata = budget::build_topup_calldata(amount_usd)
+    let op_hash = wallet_mod::execute_topup(wallet, amount_usd)
         .await
-        .context("failed to build top-up calldata")?;
-
-    // Request an OIDC token from GitHub Actions.
-    let jwt = wallet_mod::request_oidc_token(None)
-        .await
-        .context("failed to request OIDC token for top-up")?;
-
-    // Build and submit the UserOperation.
-    let openrouter_address = "0x0000000000000000000000000000000000000000"; // placeholder
-    let user_op = wallet_mod::build_user_op(wallet, openrouter_address, 0, calldata, &jwt, 0)
-        .await
-        .context("failed to build user op for top-up")?;
-
-    let bundler_url =
-        env::var("BUNDLER_URL").unwrap_or_else(|_| "https://api.pimlico.io/v2/8453/rpc".into());
-    let entry_point = "0x0000000071727De22E5E9d8BAf0edAc6f37da032"; // v0.7
-
-    let op_hash = wallet_mod::submit_user_op(&bundler_url, entry_point, &user_op)
-        .await
-        .context("failed to submit top-up user op")?;
+        .context("top-up failed")?;
 
     eprintln!("top-up submitted: op_hash={op_hash}");
-
     Ok(())
 }
 
