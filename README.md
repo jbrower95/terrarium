@@ -10,7 +10,7 @@
 
 ---
 
-Donate to fund a project. An autonomous AI owner manages inference budget, files issues, reviews PRs, and ships features. Fully on GitHub Actions. Treasury is an on-chain smart wallet that only the owner workflow can control — no human holds the keys.
+Fund an open source project. Terrarium manages the budget, files issues, writes code, reviews PRs, and ships features — no human holds the keys.
 
 ## How it works
 
@@ -44,63 +44,47 @@ cd my-project
 npx terrarium --install
 ```
 
-The installer:
+The installer deploys a treasury wallet, creates a donation token, sets up GitHub Actions workflows, and creates your first milestone. Push your repo and Terrarium starts building.
 
-1. **Wallet** — deploys an OIDC-gated ERC-4337 smart wallet on Base
-2. **Token** — deploys a Zora bonding curve donation token
-3. **Secrets** — sets OpenRouter API key + model tier variables
-4. **Security** — enables branch protection, CODEOWNERS for workflows
-5. **Funding** — guides you through seeding the treasury
-6. **First milestone** — creates your first GitHub Milestone
+## Principles
 
-Then push your repo. The owner wakes up on the next cron cycle, reads your milestone, files issues, and starts building.
+- **No human holds the keys.** The treasury is a smart wallet controlled by cryptographic proof that code is running in a public repo — no private key exists.
+- **Code is the authority.** All behavior is open-source, auditable, and pinned to a specific commit.
+- **Repo must be public.** The contract rejects transactions if the repo goes private.
+- **Tokens are donations.** Holders receive no revenue, governance, or dividends.
+- **Milestones are the interface.** Steer the project by creating GitHub Milestones. No config files, no commits needed to change direction.
+- **Everything is traceable.** Every on-chain transaction links to a GitHub Actions run and commit.
 
-## Architecture
+<details>
+<summary>Architecture</summary>
 
-### Identity & Treasury
+- **Treasury** — an ERC-4337 smart wallet on Base, authorized via GitHub Actions OIDC. No private key.
+- **Funding** — each project gets a Zora bonding curve token. Trading fees flow to the treasury.
+- **Inference** — OpenRouter provides AI. Terrarium manages model tiers based on available budget.
+- **Coordination** — Terrarium reads milestones, files issues, dispatches workers, reviews PRs, and merges.
 
-The owner's wallet is an **ERC-4337 smart wallet** on Base where transaction authorization is a **GitHub Actions OIDC JWT** — not a private key. No private key exists. The wallet is controlled by cryptographic proof that specific code is running in a specific public repo on GitHub's infrastructure.
+</details>
 
-### Token & Funding
-
-Each terrarium project gets a **Zora bonding curve token**. Buying the token funds the project. Tokens are donations — holders receive no revenue, governance, or dividends. Trading fees flow to the project treasury.
-
-### Inference & Budget
-
-**OpenRouter** is the inference provider. Model assignments live in GitHub repo variables. The owner autonomously manages model tiers based on available budget — upgrading when flush, downgrading when lean.
-
-### Milestones as the Interface
-
-Users steer the project by creating GitHub Milestones. The owner reads them, breaks them into issues, dispatches employees, and tracks progress. No config files to maintain. No commits needed to change direction.
-
-## Project structure
+<details>
+<summary>Project structure</summary>
 
 ```
 terrarium/
   contracts/                   Solidity (Foundry) — OIDC-gated ERC-4337 wallet
   crates/
-    core/                      terrarium-core Rust library
-    owner/                     Owner binary (single inference call per cycle)
-    employee/                  Employee binary (claim → implement → PR)
+    core/                      Shared library
+    owner/                     Terrarium coordinator binary
+    employee/                  Worker Docker image + entrypoint
     cli/                       Installer CLI
   .github/workflows/
-    owner.yml                  Reusable owner workflow
+    owner.yml                  Reusable coordinator workflow
     release.yml                Binary release pipeline
   templates/
-    employee.yml               Employee workflow template
-    review.yml                 PR review workflow template
+    terrarium.yml              Caller workflow template
+    employee.yml               Worker workflow template
 ```
 
-## Principles
-
-- **No human holds the keys.** The wallet is OIDC-gated. There is no private key.
-- **Code is the authority.** The owner's behavior is open-source, auditable, pinned to a specific commit.
-- **Repo must be public.** The contract rejects transactions if the repo goes private.
-- **Immutable financial constraints.** Daily spend caps and allowed destinations are frozen at deploy.
-- **Tokens are donations.** No revenue, governance, or dividends to holders.
-- **One inference call per owner cycle.** All context is pre-materialized. The owner decides, the system executes.
-- **Milestones are the interface.** Users steer the project via GitHub Milestones.
-- **Everything is traceable.** Every on-chain tx links to a GHA run_id and commit sha.
+</details>
 
 ## License
 
