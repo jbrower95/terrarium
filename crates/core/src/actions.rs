@@ -446,7 +446,7 @@ mod tests {
         let json = r#"[
             { "action": "file_issue", "title": "t", "body": "b", "complexity": "medium", "priority": "high", "milestone": "v1" },
             { "action": "dispatch_employee", "issue_number": 7, "complexity": "medium" },
-            { "action": "set_model", "tier": "low", "model": "qwen/qwen3.5-35b" },
+            { "action": "set_model", "tier": "low", "model": "qwen/qwen3.5-35b-a3b" },
             { "action": "set_auto_review", "enabled": true },
             { "action": "merge_pr", "pr_number": 5 },
             { "action": "request_changes", "pr_number": 6, "feedback": "fix tests" },

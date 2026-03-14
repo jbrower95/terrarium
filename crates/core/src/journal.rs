@@ -168,7 +168,7 @@ mod tests {
             balance_usd: 45.20,
             daily_run_rate: 2.10,
             projected_days: 21.0,
-            models: "owner:kimi-k2.5, high:kimi-k2.5, medium:qwen3.5, low:qwen3.5".into(),
+            models: "owner:kimi-k2.5, high:gpt-5.4, medium:gpt-5.4, low:qwen3.5-35b-a3b".into(),
             auto_review: true,
             body: "Merged PR #18, filed issues #19-#21 for milestone v0.2".into(),
         }

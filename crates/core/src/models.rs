@@ -53,6 +53,13 @@ pub static MODEL_CATALOG: &[ModelEntry] = &[
         cost_output: 0.60,
     },
     ModelEntry {
+        id: "qwen/qwen3.5-35b-a3b",
+        name: "Qwen 3.5 35B-A3B",
+        coding_score: 71,
+        cost_input: 0.16,
+        cost_output: 1.30,
+    },
+    ModelEntry {
         id: "qwen/qwen3.5-72b",
         name: "Qwen 3.5 72B",
         coding_score: 76,
@@ -64,6 +71,13 @@ pub static MODEL_CATALOG: &[ModelEntry] = &[
         name: "Claude Sonnet 4",
         coding_score: 88,
         cost_input: 3.00,
+        cost_output: 15.00,
+    },
+    ModelEntry {
+        id: "openai/gpt-5.4",
+        name: "GPT-5.4",
+        coding_score: 92,
+        cost_input: 2.50,
         cost_output: 15.00,
     },
     ModelEntry {
@@ -111,9 +125,9 @@ pub static MODEL_CATALOG: &[ModelEntry] = &[
 ];
 
 const DEFAULT_OWNER: &str = "moonshotai/kimi-k2.5";
-const DEFAULT_HIGH: &str = "moonshotai/kimi-k2.5";
-const DEFAULT_MEDIUM: &str = "qwen/qwen3.5-35b";
-const DEFAULT_LOW: &str = "qwen/qwen3.5-35b";
+const DEFAULT_HIGH: &str = "openai/gpt-5.4";
+const DEFAULT_MEDIUM: &str = "openai/gpt-5.4";
+const DEFAULT_LOW: &str = "qwen/qwen3.5-35b-a3b";
 
 // ---------------------------------------------------------------------------
 // Public helpers
@@ -213,13 +227,25 @@ mod tests {
 
     #[test]
     fn catalog_has_entries() {
-        assert!(MODEL_CATALOG.len() >= 11);
+        assert!(MODEL_CATALOG.len() >= 13);
     }
 
     #[test]
     fn lookup_known_model() {
         let entry = lookup("moonshotai/kimi-k2.5").unwrap();
         assert_eq!(entry.name, "Kimi K2.5");
+    }
+
+    #[test]
+    fn lookup_gpt54() {
+        let entry = lookup("openai/gpt-5.4").unwrap();
+        assert_eq!(entry.name, "GPT-5.4");
+    }
+
+    #[test]
+    fn lookup_qwen35_a3b() {
+        let entry = lookup("qwen/qwen3.5-35b-a3b").unwrap();
+        assert_eq!(entry.name, "Qwen 3.5 35B-A3B");
     }
 
     #[test]
@@ -231,7 +257,9 @@ mod tests {
     fn default_model_config() {
         let cfg = read_model_config().unwrap();
         assert_eq!(cfg.owner.as_deref(), Some("moonshotai/kimi-k2.5"));
-        assert_eq!(cfg.medium.as_deref(), Some("qwen/qwen3.5-35b"));
+        assert_eq!(cfg.high.as_deref(), Some("openai/gpt-5.4"));
+        assert_eq!(cfg.medium.as_deref(), Some("openai/gpt-5.4"));
+        assert_eq!(cfg.low.as_deref(), Some("qwen/qwen3.5-35b-a3b"));
     }
 
     #[test]

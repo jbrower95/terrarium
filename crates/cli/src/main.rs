@@ -428,9 +428,9 @@ async fn step_secrets(wallet: &str, token_addr: Option<&str>) -> Result<()> {
     let model_cfg = models::read_model_config()?;
 
     let owner_model = model_cfg.owner.as_deref().unwrap_or("moonshotai/kimi-k2.5");
-    let high_model = model_cfg.high.as_deref().unwrap_or("moonshotai/kimi-k2.5");
-    let medium_model = model_cfg.medium.as_deref().unwrap_or("qwen/qwen3.5-35b");
-    let low_model = model_cfg.low.as_deref().unwrap_or("qwen/qwen3.5-35b");
+    let high_model = model_cfg.high.as_deref().unwrap_or("openai/gpt-5.4");
+    let medium_model = model_cfg.medium.as_deref().unwrap_or("openai/gpt-5.4");
+    let low_model = model_cfg.low.as_deref().unwrap_or("qwen/qwen3.5-35b-a3b");
 
     gh_variable_set("TERRARIUM_MODEL_OWNER", owner_model).await?;
     gh_variable_set("TERRARIUM_MODEL_HIGH", high_model).await?;

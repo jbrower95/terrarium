@@ -7,9 +7,9 @@ COMPLEXITY="${TERRARIUM_COMPLEXITY:-medium}"
 MODE="${TERRARIUM_MODE:-implement}"
 
 # Model resolution: env var per tier, with defaults
-DEFAULT_HIGH="moonshotai/kimi-k2.5"
-DEFAULT_MEDIUM="qwen/qwen3.5-35b"
-DEFAULT_LOW="qwen/qwen3.5-35b"
+DEFAULT_HIGH="openai/gpt-5.4"
+DEFAULT_MEDIUM="openai/gpt-5.4"
+DEFAULT_LOW="qwen/qwen3.5-35b-a3b"
 
 case "$COMPLEXITY" in
   high)   MODEL="${TERRARIUM_MODEL_HIGH:-$DEFAULT_HIGH}" ;;

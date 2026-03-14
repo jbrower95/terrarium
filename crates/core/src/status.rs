@@ -598,9 +598,9 @@ mod tests {
             projected_days: 21.0,
             models: ModelConfig {
                 owner: Some("kimi-k2.5".into()),
-                high: Some("kimi-k2.5".into()),
-                medium: Some("qwen3.5".into()),
-                low: Some("qwen3.5".into()),
+                high: Some("gpt-5.4".into()),
+                medium: Some("gpt-5.4".into()),
+                low: Some("qwen3.5-a3b".into()),
             },
             auto_review: true,
             open_issues: 5,
@@ -622,7 +622,7 @@ mod tests {
         assert!(svg.contains("2.10"), "should contain burn rate");
         assert!(svg.contains("12.50"), "should contain credits");
         assert!(svg.contains("kimi-k2.5"), "should contain owner model");
-        assert!(svg.contains("qwen3.5"), "should contain low model");
+        assert!(svg.contains("gpt-5.4"), "should contain high model");
         assert!(svg.contains("5 issues"), "should contain issue count");
         assert!(svg.contains("2 PRs"), "should contain PR count");
         assert!(svg.contains("12 merged"), "should contain merged count");

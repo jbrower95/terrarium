@@ -251,9 +251,9 @@ mod tests {
             },
             models: ModelConfig {
                 owner: Some("moonshotai/kimi-k2.5".into()),
-                high: Some("moonshotai/kimi-k2.5".into()),
-                medium: Some("qwen/qwen3.5-35b".into()),
-                low: Some("qwen/qwen3.5-35b".into()),
+                high: Some("openai/gpt-5.4".into()),
+                medium: Some("openai/gpt-5.4".into()),
+                low: Some("qwen/qwen3.5-35b-a3b".into()),
             },
             auto_review: true,
             milestones: vec![
@@ -332,7 +332,7 @@ mod tests {
     fn prompt_contains_models() {
         let prompt = materialize_owner_context(&sample_context());
         assert!(prompt.contains("owner: moonshotai/kimi-k2.5"));
-        assert!(prompt.contains("medium: qwen/qwen3.5-35b"));
+        assert!(prompt.contains("medium: openai/gpt-5.4"));
         assert!(prompt.contains("Auto-review: enabled"));
     }
 
